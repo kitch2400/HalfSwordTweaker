@@ -5,16 +5,14 @@ namespace HalfSwordTweaker.Config;
 /// </summary>
 public class ConfigManager
 {
-    private const string BackupFileName = "engine.ini.backup";
-
     private readonly string _configDirectory;
     private readonly string _engineIniPath;
     private readonly string _gameUserSettingsIniPath;
-    private readonly string _backupPath;
 
     private IniFile? _engineIni;
     private IniFile? _gameUserSettingsIni;
     private bool _engineIniLoaded = false;
+    private readonly Dictionary<string, HashSet<string>> _modifiedEngineIniKeys = new();
 
     /// <summary>
     /// Whether engine.ini has been loaded.
@@ -29,7 +27,6 @@ public class ConfigManager
         _configDirectory = FileHelper.GetConfigDirectory();
         _engineIniPath = FileHelper.GetEngineIniPath();
         _gameUserSettingsIniPath = FileHelper.GetGameUserSettingsIniPath();
-        _backupPath = Path.Combine(_configDirectory, BackupFileName);
 
         // Only load GameUserSettings.ini initially - engine.ini is lazy-loaded
         _gameUserSettingsIni = new IniFile(_gameUserSettingsIniPath);
@@ -95,10 +92,9 @@ public class ConfigManager
     /// <summary>
     /// Writes all configuration files.
     /// </summary>
-    /// <param name="createBackup">Whether to create a backup before writing.</param>
     /// <param name="setReadOnly">Whether to set engine.ini to read-only after writing.</param>
     /// <returns>True if all files were written successfully; otherwise, false.</returns>
-    public bool WriteAll(bool createBackup = false, bool setReadOnly = true)
+    public bool WriteAll(bool setReadOnly = true)
     {
         if (_gameUserSettingsIni == null)
         {
@@ -110,14 +106,16 @@ public class ConfigManager
             // Write engine.ini only if it was loaded/modified
             if (_engineIni != null)
             {
-                // Create backup if needed (only if source file exists)
-                if (createBackup && File.Exists(_engineIniPath) && !File.Exists(_backupPath))
+                // Write engine.ini - only modified keys if tracked, otherwise all
+                if (_modifiedEngineIniKeys.Count > 0)
                 {
-                    FileHelper.CreateBackup(_engineIniPath, _backupPath);
+                    _engineIni.WriteModifiedKeys(_modifiedEngineIniKeys);
+                    _modifiedEngineIniKeys.Clear();
                 }
-
-                // Write engine.ini
-                _engineIni.Write(createBackup);
+                else
+                {
+                    _engineIni.Write();
+                }
 
                 // Set read-only flag for engine.ini
                 if (setReadOnly)
@@ -126,8 +124,8 @@ public class ConfigManager
                 }
             }
 
-            // Write GameUserSettings.ini (no backup needed)
-            _gameUserSettingsIni.Write(false);
+            // Write GameUserSettings.ini
+            _gameUserSettingsIni.Write();
 
             return true;
         }
@@ -189,17 +187,39 @@ public class ConfigManager
     }
 
     /// <summary>
+    /// Gets a single engine.ini setting directly without loading all settings.
+    /// Creates a temporary IniFile, reads only what's needed, doesn't store in _engineIni.
+    /// </summary>
+    /// <param name="section">The section name.</param>
+    /// <param name="key">The setting name.</param>
+    /// <param name="defaultValue">The default value if not found.</param>
+    /// <returns>The setting value, or the default value if not found.</returns>
+    public string? GetEngineIniSettingDirect(string section, string key, string? defaultValue = null)
+    {
+        var tempIni = new IniFile(_engineIniPath);
+        tempIni.Read();
+        return tempIni.GetValueAuto(section, key, defaultValue);
+    }
+
+    /// <summary>
     /// Sets a setting value based on the config source.
     /// </summary>
     /// <param name="definition">The setting definition.</param>
     /// <param name="value">The value to set.</param>
     public void SetSetting(SettingDefinition definition, string value)
     {
+        if (definition.Name == "r.AntiAliasingMethod")
+        {
+            SetAntiAliasingMethod(value);
+            return;
+        }
+
         switch (definition.Source)
         {
             case ConfigSource.EngineIni:
                 EnsureEngineIniLoaded();
                 _engineIni?.SetValue(definition.Section, definition.Name, value);
+                TrackEngineIniModification(definition.Section, definition.Name);
                 break;
             case ConfigSource.GameUserSettings:
                 _gameUserSettingsIni?.SetValue(definition.Section, definition.Name, value);
@@ -207,6 +227,53 @@ public class ConfigManager
             case ConfigSource.ScalabilityGroups:
                 _gameUserSettingsIni?.SetValue("ScalabilityGroups", definition.Name, value);
                 break;
+        }
+    }
+
+    private void TrackEngineIniModification(string section, string key)
+    {
+        if (!_modifiedEngineIniKeys.ContainsKey(section))
+        {
+            _modifiedEngineIniKeys[section] = new HashSet<string>();
+        }
+        _modifiedEngineIniKeys[section].Add(key);
+    }
+
+    private void SetAntiAliasingMethod(string value)
+    {
+        // Use existing _engineIni if already loaded, otherwise create a temporary one for direct write
+        IniFile? iniToUse = _engineIni;
+
+        if (iniToUse == null)
+        {
+            // Direct write without loading all settings - create temp IniFile, modify, write
+            iniToUse = new IniFile(_engineIniPath);
+            iniToUse.Read();
+        }
+
+        iniToUse.SetValue("SystemSettings", "r.AntiAliasingMethod", value);
+        TrackEngineIniModification("SystemSettings", "r.AntiAliasingMethod");
+
+        if (value == "4")
+        {
+            iniToUse.SetValue("SystemSettings", "r.TemporalAA.Upsampling", "1");
+            iniToUse.SetValue("SystemSettings", "r.TSR.Enable", "1");
+            iniToUse.SetValue("SystemSettings", "r.ScreenPercentage", "77");
+            TrackEngineIniModification("SystemSettings", "r.TemporalAA.Upsampling");
+            TrackEngineIniModification("SystemSettings", "r.TSR.Enable");
+            TrackEngineIniModification("SystemSettings", "r.ScreenPercentage");
+        }
+        else
+        {
+            iniToUse.DeleteValue("SystemSettings", "r.TemporalAA.Upsampling");
+            iniToUse.DeleteValue("SystemSettings", "r.TSR.Enable");
+            iniToUse.DeleteValue("SystemSettings", "r.ScreenPercentage");
+        }
+
+        // If using temporary IniFile, write directly and discard
+        if (_engineIni == null)
+        {
+            iniToUse.Write();
         }
     }
 
@@ -286,6 +353,7 @@ public class ConfigManager
             if (enabled)
             {
                 _engineIni?.SetValue(cv.Section, cv.Key, cv.EnabledValue);
+                TrackEngineIniModification(cv.Section, cv.Key);
             }
             else
             {

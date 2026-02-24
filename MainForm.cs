@@ -15,6 +15,7 @@ public class MainForm : Form
     private ToolStripStatusLabel _statusLabel = new();
     private readonly ComboBox _profileComboBox = new();
     private readonly Button _refreshButton = new();
+    private readonly ToolTip _tooltip = new();
 
     private bool _hasScalabilityGroupChanges;
     private bool _isLoadingProfile;
@@ -23,9 +24,52 @@ public class MainForm : Form
     {
         _configManager = new ConfigManager();
         _profileManager = new ProfileManager();
+        DescriptionFetcher.LoadCache();
 
         InitializeComponent();
         LoadSettings();
+        InitializeTooltips();
+    }
+
+    private async void InitializeTooltips()
+    {
+        _statusLabel.Text = "Loading descriptions...";
+        
+        var progress = new Progress<string>(msg => _statusLabel.Text = msg);
+        await DescriptionFetcher.FetchAllAsync(progress);
+
+        // Configure tooltip
+        _tooltip.AutoPopDelay = 10000;
+        _tooltip.InitialDelay = 500;
+        _tooltip.ReshowDelay = 200;
+        _tooltip.ShowAlways = true;
+
+        // Wire up tooltips to all setting controls
+        foreach (TabPage tab in _tabControl.TabPages)
+        {
+            if (tab is CategoryTab categoryTab)
+            {
+                foreach (var setting in categoryTab.Settings)
+                {
+                    if (categoryTab.GetSettingControl(setting.Name) is SettingControl control)
+                    {
+                        var inputControl = control.InputControl;
+                        var labelControl = control.LabelControl;
+                        var settingName = setting.Name;
+                        
+                        // Set tooltip immediately with description
+                        var description = DescriptionFetcher.GetDescription(settingName);
+                        if (!string.IsNullOrEmpty(description))
+                        {
+                            _tooltip.SetToolTip(inputControl, description);
+                            _tooltip.SetToolTip(labelControl, description);
+                        }
+                    }
+                }
+            }
+        }
+        
+        _statusLabel.Text = "Ready";
     }
 
     private void InitializeComponent()
@@ -178,6 +222,15 @@ public class MainForm : Form
                             {
                                 // GetCompositeSetting() loads engine.ini silently without setting _engineIniLoaded flag
                             }
+                            else if (setting.Name == "r.AntiAliasingMethod")
+                            {
+                                // Use lightweight direct read - don't load all 70+ settings
+                                var value = _configManager.GetEngineIniSettingDirect(
+                                    setting.Section, setting.Name, setting.DefaultValue);
+                                control.IsNotSet = string.IsNullOrEmpty(value) || value == setting.DefaultValue;
+                                control.Value = value ?? setting.DefaultValue;
+                                continue;
+                            }
                             else
                             {
                                 continue;
@@ -325,7 +378,7 @@ public class MainForm : Form
                 }
             }
 
-            if (_configManager.WriteAll(createBackup: true, setReadOnly: true))
+            if (_configManager.WriteAll(setReadOnly: true))
             {
                 if (_hasScalabilityGroupChanges)
                 {

@@ -76,9 +76,8 @@ public class IniFile
     /// <summary>
     /// Writes the INI file to disk.
     /// </summary>
-    /// <param name="createBackup">Whether to create a backup before writing.</param>
     /// <returns>True if the file was written successfully; otherwise, false.</returns>
-    public bool Write(bool createBackup = false)
+    public bool Write()
     {
         try
         {
@@ -86,11 +85,6 @@ public class IniFile
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
-            }
-
-            if (createBackup && File.Exists(_filePath))
-            {
-                CreateBackup();
             }
 
             var lines = new List<string>();
@@ -108,6 +102,125 @@ public class IniFile
             }
 
             File.WriteAllLines(_filePath, lines);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes only modified keys to the INI file, preserving existing content.
+    /// </summary>
+    /// <param name="modifiedKeys">Dictionary of modified keys by section.</param>
+    /// <returns>True if the file was written successfully; otherwise, false.</returns>
+    public bool WriteModifiedKeys(Dictionary<string, HashSet<string>> modifiedKeys)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            // Read existing file to preserve content
+            var existingLines = new List<string>();
+            if (File.Exists(_filePath))
+            {
+                existingLines = File.ReadAllLines(_filePath).ToList();
+            }
+
+            // Build output lines
+            var outputLines = new List<string>();
+            string currentSection = "";
+            var processedSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // First pass: process modified sections
+            foreach (var line in existingLines)
+            {
+                var trimmedLine = line.Trim();
+
+                if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
+                {
+                    // Output previous section if it had content
+                    if (!string.IsNullOrEmpty(currentSection) && _sections.ContainsKey(currentSection))
+                    {
+                        foreach (var kvp in _sections[currentSection])
+                        {
+                            if (!outputLines.Contains($"{kvp.Key}={kvp.Value}"))
+                            {
+                                outputLines.Add($"{kvp.Key}={kvp.Value}");
+                            }
+                        }
+                        outputLines.Add(string.Empty);
+                    }
+
+                    currentSection = trimmedLine.Trim('[', ']');
+                    outputLines.Add(trimmedLine);
+                    processedSections.Add(currentSection);
+                    processedKeys.Clear();
+                }
+                else if (!string.IsNullOrEmpty(trimmedLine) && !trimmedLine.StartsWith(";") && !trimmedLine.StartsWith("//"))
+                {
+                    // It's a key=value line
+                    var equalsIndex = trimmedLine.IndexOf('=');
+                    if (equalsIndex > 0)
+                    {
+                        var key = trimmedLine.Substring(0, equalsIndex).Trim();
+                        processedKeys.Add(key);
+                        outputLines.Add(trimmedLine);
+                    }
+                    else
+                    {
+                        outputLines.Add(trimmedLine);
+                    }
+                }
+                else
+                {
+                    outputLines.Add(trimmedLine);
+                }
+            }
+
+            // Add any remaining modified keys from current section
+            if (!string.IsNullOrEmpty(currentSection) && _sections.ContainsKey(currentSection))
+            {
+                if (modifiedKeys.TryGetValue(currentSection, out var keys))
+                {
+                    foreach (var key in keys)
+                    {
+                        if (_sections[currentSection].TryGetValue(key, out var value))
+                        {
+                            var keyLine = $"{key}={value}";
+                            if (!outputLines.Contains(keyLine))
+                            {
+                                outputLines.Add(keyLine);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add new sections that weren't in the file
+            foreach (var section in modifiedKeys)
+            {
+                if (!processedSections.Contains(section.Key))
+                {
+                    outputLines.Add(string.Empty);
+                    outputLines.Add($"[{section.Key}]");
+                    foreach (var key in section.Value)
+                    {
+                        if (_sections[section.Key].TryGetValue(key, out var value))
+                        {
+                            outputLines.Add($"{key}={value}");
+                        }
+                    }
+                }
+            }
+
+            File.WriteAllLines(_filePath, outputLines);
             return true;
         }
         catch
@@ -202,22 +315,6 @@ public class IniFile
     public Dictionary<string, string> GetSettings(string section)
     {
         return _sections.TryGetValue(section, out var settings) ? settings : new Dictionary<string, string>();
-    }
-
-    /// <summary>
-    /// Creates a backup of the INI file.
-    /// </summary>
-    /// <param name="backupPath">The path for the backup file. If null, a default path is used.</param>
-    /// <returns>The path to the backup file.</returns>
-    public string CreateBackup(string? backupPath = null)
-    {
-        if (string.IsNullOrEmpty(backupPath))
-        {
-            backupPath = $"{_filePath}.backup_{DateTime.Now:yyyyMMdd_HHmmss}";
-        }
-
-        File.Copy(_filePath, backupPath, overwrite: true);
-        return backupPath;
     }
 
     /// <summary>

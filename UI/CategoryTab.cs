@@ -49,10 +49,10 @@ public class CategoryTab : TabPage
         foreach (var setting in Settings)
         {
             // Skip engine.ini settings if not loaded (lazy loading)
-            // Exception: CompositeBoolean settings handle their own loading
+            // Exception: CompositeBoolean and r.AntiAliasingMethod handle their own loading/direct write
             if (setting.Source == ConfigSource.EngineIni && !configManager.EngineIniLoaded)
             {
-                if (setting.ControlType != ControlType.CompositeBoolean)
+                if (setting.ControlType != ControlType.CompositeBoolean && setting.Name != "r.AntiAliasingMethod")
                 {
                     continue;
                 }

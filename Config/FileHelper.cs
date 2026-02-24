@@ -64,31 +64,6 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Creates a backup of a file.
-    /// </summary>
-    /// <param name="filePath">The path to the file to backup.</param>
-    /// <param name="backupPath">The path for the backup file. If null, a default path is used.</param>
-    /// <returns>The path to the backup file.</returns>
-    public static string CreateBackup(string filePath, string? backupPath = null)
-    {
-        if (!File.Exists(filePath))
-        {
-            throw new FileNotFoundException($"File not found: {filePath}");
-        }
-
-        if (string.IsNullOrEmpty(backupPath))
-        {
-            var directory = Path.GetDirectoryName(filePath) ?? string.Empty;
-            var fileName = Path.GetFileNameWithoutExtension(filePath);
-            var extension = Path.GetExtension(filePath);
-            backupPath = Path.Combine(directory, $"{fileName}.backup_{DateTime.Now:yyyyMMdd_HHmmss}{extension}");
-        }
-
-        File.Copy(filePath, backupPath, overwrite: true);
-        return backupPath;
-    }
-
-    /// <summary>
     /// Ensures that a directory exists.
     /// </summary>
     /// <param name="directoryPath">The path to the directory.</param>

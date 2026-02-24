@@ -71,6 +71,10 @@ public class SettingControl : Panel
 
     public SettingDefinition? Definition => _definition;
 
+    public Control InputControl => _inputControl;
+
+    public Control LabelControl => _label;
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Value
     {
@@ -236,6 +240,7 @@ public class SettingControl : Panel
 
         _inputControl = CreateInputControl(definition, out var valueLabel);
         _inputControl.Dock = DockStyle.Top;
+        _inputControl.Tag = definition?.Name ?? "";
         _options = definition?.Options;
         _stringOptions = definition?.StringOptions;
         _valueLabel = valueLabel;

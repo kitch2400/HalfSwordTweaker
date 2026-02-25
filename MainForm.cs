@@ -290,7 +290,7 @@ public class MainForm : Form
                 {
                     if (categoryTab.GetSettingControl(setting.Name) is SettingControl control)
                     {
-                        // EngineIni settings use direct read
+                        // EngineIni settings use GetSetting which handles key mapping
                         if (setting.Source == ConfigSource.EngineIni)
                         {
                             if (setting.ControlType == ControlType.CompositeBoolean)
@@ -299,12 +299,11 @@ public class MainForm : Form
                             }
                             else
                             {
-                                var value = _configManager.GetEngineIniSettingDirect(
-                                    setting.Section, setting.Name, setting.DefaultValue);
+                                var value = _configManager.GetSetting(setting);
                                 control.IsNotSet = string.IsNullOrEmpty(value);
 
                                 // Detect TSR[Kitch] by checking r.TSR.History.ScreenPercentage
-                                if (value == "4")
+                                if (setting.Name == "r.AntiAliasingMethod" && value == "4")
                                 {
                                     var historyScreenPct = _configManager.GetEngineIniSettingDirect(
                                         "SystemSettings", "r.TSR.History.ScreenPercentage", "");
@@ -315,7 +314,7 @@ public class MainForm : Form
                                     }
                                     else
                                     {
-                                        control.Value = value;
+                                        control.Value = value ?? setting.DefaultValue;
                                     }
                                 }
                                 else

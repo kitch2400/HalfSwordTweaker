@@ -61,6 +61,12 @@ public class CategoryTab : TabPage
                 ini.DeleteValue("SystemSettings", "r.ScreenPercentage");
                 ini.DeleteValue("SystemSettings", "r.TSR.History.ScreenPercentage");
             }
+
+            // Delete r.Tonemapper.Sharpen when AA is not Off
+            if (newValue != "0")
+            {
+                ini.DeleteValue("SystemSettings", "r.Tonemapper.Sharpen");
+            }
             // When switching from TSR[Kitch] to TSR, delete r.TSR.History.ScreenPercentage
             else if (newValue == "4")
             {

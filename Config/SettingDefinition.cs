@@ -80,6 +80,20 @@ public class SettingDefinition
         };
     }
 
+    public static SettingDefinition NumericDependent(string name, string section, ConfigSource source,
+        decimal min, decimal max, string defaultValue, string description, PerformanceImpact impact, int decimalPlaces,
+        string dependsOnSetting, string dependsOnValue)
+    {
+        return new SettingDefinition(name, section, source, ControlType.NumericUpDown, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DecimalPlaces = decimalPlaces,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue
+        };
+    }
+
     public static SettingDefinition TrackBarInt(string name, string section, ConfigSource source,
         int min, int max, string defaultValue, string description, PerformanceImpact impact)
     {

@@ -135,6 +135,23 @@ public class SettingControl : Panel
         set => _notSetLabel.Visible = value;
     }
 
+    public void SetDependentVisibility(SettingControl parentControl)
+    {
+        if (string.IsNullOrEmpty(_definition?.DependsOnSetting))
+            return;
+
+        void UpdateVisibility()
+        {
+            var parentValue = parentControl.Value;
+            var isVisible = parentValue == _definition.DependsOnValue;
+            Visible = isVisible;
+        }
+
+        UpdateVisibility();
+
+        parentControl.ValueChanged += (s, e) => UpdateVisibility();
+    }
+
     protected virtual void OnValueChanged()
     {
         ValueChanged?.Invoke(this, EventArgs.Empty);

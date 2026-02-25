@@ -19,6 +19,7 @@ public class MainForm : Form
 
     private bool _hasScalabilityGroupChanges;
     private bool _isLoadingProfile;
+    private bool _msaaWarningShown;
 
     public MainForm()
     {
@@ -149,18 +150,7 @@ public class MainForm : Form
         Controls.Add(buttonPanel);
         Controls.Add(statusStrip);
 
-        _tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
-
         InitializeTabs();
-    }
-
-    private void TabControl_SelectedIndexChanged(object? sender, EventArgs e)
-    {
-        if (_tabControl.SelectedTab?.Text == "Advanced[WIP]" && !_configManager.EngineIniLoaded)
-        {
-            _configManager.EnsureEngineIniLoaded();
-            PopulateSettingsFromConfig();
-        }
     }
 
     private void InitializeTabs()
@@ -178,6 +168,50 @@ public class MainForm : Form
         }
 
         WireUpScalabilityGroupChangeTracking();
+        WireUpAADependentSettings();
+    }
+
+    private void WireUpAADependentSettings()
+    {
+        SettingControl? aaControl = null;
+
+        foreach (TabPage tab in _tabControl.TabPages)
+        {
+            if (tab is CategoryTab categoryTab)
+            {
+                foreach (var setting in categoryTab.Settings)
+                {
+                    if (categoryTab.GetSettingControl(setting.Name) is SettingControl control)
+                    {
+                        if (setting.Name == "r.AntiAliasingMethod")
+                        {
+                            aaControl = control;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (aaControl == null)
+            return;
+
+        foreach (TabPage tab in _tabControl.TabPages)
+        {
+            if (tab is CategoryTab categoryTab)
+            {
+                foreach (var setting in categoryTab.Settings)
+                {
+                    if (!string.IsNullOrEmpty(setting.DependsOnSetting) && 
+                        setting.DependsOnSetting == "r.AntiAliasingMethod")
+                    {
+                        if (categoryTab.GetSettingControl(setting.Name) is SettingControl control)
+                        {
+                            control.SetDependentVisibility(aaControl);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private void WireUpScalabilityGroupChangeTracking()
@@ -214,25 +248,49 @@ public class MainForm : Form
                 {
                     if (categoryTab.GetSettingControl(setting.Name) is SettingControl control)
                     {
-                        // Skip EngineIni settings if not loaded yet (lazy loading)
-                        // Exception: CompositeBoolean settings need to load engine.ini
-                        if (setting.Source == ConfigSource.EngineIni && !_configManager.EngineIniLoaded)
+                        // EngineIni settings use direct read
+                        if (setting.Source == ConfigSource.EngineIni)
                         {
                             if (setting.ControlType == ControlType.CompositeBoolean)
                             {
-                                // GetCompositeSetting() loads engine.ini silently without setting _engineIniLoaded flag
-                            }
-                            else if (setting.Name == "r.AntiAliasingMethod")
-                            {
-                                // Use lightweight direct read - don't load all 70+ settings
-                                var value = _configManager.GetEngineIniSettingDirect(
-                                    setting.Section, setting.Name, setting.DefaultValue);
-                                control.IsNotSet = string.IsNullOrEmpty(value) || value == setting.DefaultValue;
-                                control.Value = value ?? setting.DefaultValue;
-                                continue;
+                                // GetCompositeSetting() reads engine.ini directly
                             }
                             else
                             {
+                                var value = _configManager.GetEngineIniSettingDirect(
+                                    setting.Section, setting.Name, setting.DefaultValue);
+                                control.IsNotSet = string.IsNullOrEmpty(value);
+
+                                // Detect TSR[Kitch] by checking r.TSR.History.ScreenPercentage
+                                if (value == "4")
+                                {
+                                    var historyScreenPct = _configManager.GetEngineIniSettingDirect(
+                                        "SystemSettings", "r.TSR.History.ScreenPercentage", "");
+                                    if (historyScreenPct == "100")
+                                    {
+                                        // TSR[Kitch] has r.TSR.History.ScreenPercentage=100
+                                        control.Value = "5"; // TSR[Kitch] internal value
+                                    }
+                                    else
+                                    {
+                                        control.Value = value;
+                                    }
+                                }
+                                else
+                                {
+                                    control.Value = value ?? setting.DefaultValue;
+                                }
+
+                                // Warn if MSAA (value 3) is in use
+                                if (setting.Name == "r.AntiAliasingMethod" && value == "3" && !_msaaWarningShown)
+                                {
+                                    MessageBox.Show(
+                                        "Your current setting uses MSAA (value 3), which is no longer supported by this tool. " +
+                                        "Please select a different anti-aliasing method (Off, FXAA, TAA, or TSR).",
+                                        "Unsupported Setting", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    _msaaWarningShown = true;
+                                }
+
                                 continue;
                             }
                         }
@@ -285,8 +343,8 @@ public class MainForm : Form
                 _statusLabel.Text = "Config directory created.";
             }
 
-            // Only load GameUserSettings.ini initially - engine.ini is lazy-loaded
-            if (_configManager.ReadAll(loadEngineIni: false))
+            // Only load GameUserSettings.ini
+            if (_configManager.ReadAll())
             {
                 // Auto-detect matching profile from current ScalabilityGroups settings
                 var currentGroups = GetCurrentScalabilityGroups();
@@ -378,7 +436,7 @@ public class MainForm : Form
                 }
             }
 
-            if (_configManager.WriteAll(setReadOnly: true))
+            if (_configManager.WriteAll())
             {
                 if (_hasScalabilityGroupChanges)
                 {
@@ -513,7 +571,7 @@ public class MainForm : Form
 
             if (profileName.Equals(ProfileManager.CustomProfileName, StringComparison.OrdinalIgnoreCase))
             {
-                if (_configManager.ReadAll(loadEngineIni: false))
+                if (_configManager.ReadAll())
                 {
                     PopulateSettingsFromConfig();
                     _profileManager.SetActiveProfile(ProfileManager.CustomProfileName);

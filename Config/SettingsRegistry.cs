@@ -5,8 +5,7 @@ public static class SettingsRegistry
     public static readonly Dictionary<string, List<SettingDefinition>> Tabs = new()
     {
         ["Display & Resolution"] = GetDisplayResolutionSettings(),
-        ["Scalability Groups"] = GetScalabilityGroupsSettings(),
-        ["Advanced[WIP]"] = GetAdvancedSettings()
+        ["Scalability Groups"] = GetScalabilityGroupsSettings()
     };
 
     private static List<SettingDefinition> GetDisplayResolutionSettings()
@@ -22,8 +21,32 @@ public static class SettingsRegistry
             SettingDefinition.Numeric("FrameRateLimit", "/Script/Engine.GameUserSettings", ConfigSource.GameUserSettings,
                 0m, 360m, "0", "Framerate cap (0 = unlimited)", PerformanceImpact.Low, 0),
             SettingDefinition.Combo("r.AntiAliasingMethod", "SystemSettings", ConfigSource.EngineIni,
-                new Dictionary<int, string> { [0] = "Off", [1] = "FXAA", [2] = "TAA", [3] = "MSAA", [4] = "TSR" },
+                new Dictionary<int, string> { [0] = "Off", [1] = "FXAA", [2] = "TAA", [4] = "TSR", [5] = "TSR[Kitch]" },
                 "2", "Anti-aliasing method (TSR enables upscaling)", PerformanceImpact.Medium),
+            SettingDefinition.TrackBarIntDependent("r.FXAA.Quality", "SystemSettings", ConfigSource.EngineIni,
+                0, 5, "4", "FXAA quality (0=Console, 5=Ultra)", PerformanceImpact.Low, "r.AntiAliasingMethod", "1"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Quality", "SystemSettings", ConfigSource.EngineIni,
+                0, 3, "2", "Temporal AA quality - controls input filtering", PerformanceImpact.Low, "r.AntiAliasingMethod", "2"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Quality_TSR", "SystemSettings", ConfigSource.EngineIni,
+                0, 3, "2", "Temporal AA quality - controls input filtering", PerformanceImpact.Low, "r.AntiAliasingMethod", "4"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Quality_TSRKitch", "SystemSettings", ConfigSource.EngineIni,
+                0, 3, "2", "Temporal AA quality - controls input filtering", PerformanceImpact.Low, "r.AntiAliasingMethod", "5"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Upsampling", "SystemSettings", ConfigSource.EngineIni,
+                0, 1, "1", "Temporal AA upsampling (0=Off, 1=On)", PerformanceImpact.Medium, "r.AntiAliasingMethod", "2"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Upsampling_TSR", "SystemSettings", ConfigSource.EngineIni,
+                0, 1, "1", "Temporal AA upsampling (0=Off, 1=On)", PerformanceImpact.Medium, "r.AntiAliasingMethod", "4"),
+            SettingDefinition.TrackBarIntDependent("r.TemporalAA.Upsampling_TSRKitch", "SystemSettings", ConfigSource.EngineIni,
+                0, 1, "0", "Temporal AA upsampling (0=Off, 1=On)", PerformanceImpact.Medium, "r.AntiAliasingMethod", "5"),
+            SettingDefinition.TrackBarIntDependent("r.TSR.Enable", "SystemSettings", ConfigSource.EngineIni,
+                0, 1, "1", "Temporal Super Resolution (0=Off, 1=On)", PerformanceImpact.Medium, "r.AntiAliasingMethod", "4"),
+            SettingDefinition.TrackBarIntDependent("r.TSR.Enable_TSRKitch", "SystemSettings", ConfigSource.EngineIni,
+                0, 1, "1", "Temporal Super Resolution (0=Off, 1=On)", PerformanceImpact.Medium, "r.AntiAliasingMethod", "5"),
+            SettingDefinition.TrackBarIntDependent("r.ScreenPercentage", "SystemSettings", ConfigSource.EngineIni,
+                50, 200, "77", "Screen percentage for upscaling (lower = faster)", PerformanceImpact.High, "r.AntiAliasingMethod", "4"),
+            SettingDefinition.TrackBarIntDependent("r.TSR.History.ScreenPercentage_TSRKitch", "SystemSettings", ConfigSource.EngineIni,
+                50, 200, "100", "TSR history screen percentage", PerformanceImpact.Medium, "r.AntiAliasingMethod", "5"),
+            SettingDefinition.TrackBarIntDependent("r.ScreenPercentage_TSRKitch", "SystemSettings", ConfigSource.EngineIni,
+                50, 200, "100", "Screen percentage for upscaling (lower = faster)", PerformanceImpact.High, "r.AntiAliasingMethod", "5"),
             SettingDefinition.Bool("bUseDynamicResolution", "/Script/Engine.GameUserSettings", ConfigSource.GameUserSettings,
                 "0", "Dynamically scale resolution to maintain framerate", PerformanceImpact.Medium),
             SettingDefinition.Bool("bUseHDRDisplayOutput", "/Script/Engine.GameUserSettings", ConfigSource.GameUserSettings,

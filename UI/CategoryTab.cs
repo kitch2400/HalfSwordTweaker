@@ -46,13 +46,37 @@ public class CategoryTab : TabPage
 
     public void UpdateSettings(ConfigManager configManager)
     {
+        // When AA is not TSR or TSR[Kitch], delete TSR-specific keys from engine.ini
+        var aaControl = GetSettingControl("r.AntiAliasingMethod");
+        if (aaControl != null)
+        {
+            var newValue = aaControl.Value;
+            var ini = new Config.IniFile(Config.FileHelper.GetEngineIniPath());
+            ini.Read();
+            
+            // Delete all TSR keys when going to Off/FXAA/TAA
+            if (newValue != "4" && newValue != "5")
+            {
+                ini.DeleteValue("SystemSettings", "r.TSR.Enable");
+                ini.DeleteValue("SystemSettings", "r.ScreenPercentage");
+                ini.DeleteValue("SystemSettings", "r.TSR.History.ScreenPercentage");
+            }
+            // When switching from TSR[Kitch] to TSR, delete r.TSR.History.ScreenPercentage
+            else if (newValue == "4")
+            {
+                ini.DeleteValue("SystemSettings", "r.TSR.History.ScreenPercentage");
+            }
+            
+            ini.Write();
+        }
+
         foreach (var setting in Settings)
         {
-            // Skip engine.ini settings if not loaded (lazy loading)
-            // Exception: CompositeBoolean and r.AntiAliasingMethod handle their own loading/direct write
-            if (setting.Source == ConfigSource.EngineIni && !configManager.EngineIniLoaded)
+            // Skip dependent settings where parent value doesn't match DependsOnValue
+            if (!string.IsNullOrEmpty(setting.DependsOnSetting))
             {
-                if (setting.ControlType != ControlType.CompositeBoolean && setting.Name != "r.AntiAliasingMethod")
+                var parentControl = GetSettingControl(setting.DependsOnSetting);
+                if (parentControl == null || parentControl.Value != setting.DependsOnValue)
                 {
                     continue;
                 }

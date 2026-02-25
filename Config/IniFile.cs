@@ -145,19 +145,6 @@ public class IniFile
 
                 if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
                 {
-                    // Output previous section if it had content
-                    if (!string.IsNullOrEmpty(currentSection) && _sections.ContainsKey(currentSection))
-                    {
-                        foreach (var kvp in _sections[currentSection])
-                        {
-                            if (!outputLines.Contains($"{kvp.Key}={kvp.Value}"))
-                            {
-                                outputLines.Add($"{kvp.Key}={kvp.Value}");
-                            }
-                        }
-                        outputLines.Add(string.Empty);
-                    }
-
                     currentSection = trimmedLine.Trim('[', ']');
                     outputLines.Add(trimmedLine);
                     processedSections.Add(currentSection);
@@ -165,13 +152,16 @@ public class IniFile
                 }
                 else if (!string.IsNullOrEmpty(trimmedLine) && !trimmedLine.StartsWith(";") && !trimmedLine.StartsWith("//"))
                 {
-                    // It's a key=value line
+                    // It's a key=value line - skip if it's a modified key
                     var equalsIndex = trimmedLine.IndexOf('=');
                     if (equalsIndex > 0)
                     {
                         var key = trimmedLine.Substring(0, equalsIndex).Trim();
+                        if (!modifiedKeys.TryGetValue(currentSection, out var keys) || !keys.Contains(key))
+                        {
+                            outputLines.Add(trimmedLine);
+                        }
                         processedKeys.Add(key);
-                        outputLines.Add(trimmedLine);
                     }
                     else
                     {

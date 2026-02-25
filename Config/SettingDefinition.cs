@@ -52,6 +52,9 @@ public class SettingDefinition
     public Dictionary<string, string>? StringOptions { get; set; }
     public List<CompositeValue>? CompositeValues { get; set; }
 
+    public string? DependsOnSetting { get; set; }
+    public string? DependsOnValue { get; set; }
+
     public SettingDefinition() { }
 
     public SettingDefinition(string name, string section, ConfigSource source, ControlType controlType,
@@ -84,6 +87,19 @@ public class SettingDefinition
         {
             MinValue = min,
             MaxValue = max
+        };
+    }
+
+    public static SettingDefinition TrackBarIntDependent(string name, string section, ConfigSource source,
+        int min, int max, string defaultValue, string description, PerformanceImpact impact,
+        string dependsOnSetting, string dependsOnValue)
+    {
+        return new SettingDefinition(name, section, source, ControlType.TrackBar, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue
         };
     }
 

@@ -105,6 +105,7 @@ public class ConfigManager
             "r.TemporalAA.Upsampling_TSRKitch" => "r.TemporalAA.Upsampling",
             "r.TSR.Enable_TSRKitch" => "r.TSR.Enable",
             "r.TSR.History.ScreenPercentage_TSRKitch" => "r.TSR.History.ScreenPercentage",
+            "r.ScreenPercentage_TSR" => "r.ScreenPercentage",
             "r.ScreenPercentage_TSRKitch" => "r.ScreenPercentage",
             _ => definition.Name
         };
@@ -154,6 +155,7 @@ public class ConfigManager
             "r.TemporalAA.Upsampling_TSRKitch" => "r.TemporalAA.Upsampling",
             "r.TSR.Enable_TSRKitch" => "r.TSR.Enable",
             "r.TSR.History.ScreenPercentage_TSRKitch" => "r.TSR.History.ScreenPercentage",
+            "r.ScreenPercentage_TSR" => "r.ScreenPercentage",
             "r.ScreenPercentage_TSRKitch" => "r.ScreenPercentage",
             _ => definition.Name
         };

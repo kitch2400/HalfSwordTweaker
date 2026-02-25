@@ -97,7 +97,7 @@ public class MainForm : Form
                     {
                         var inputControl = control.InputControl;
                         var labelControl = control.LabelControl;
-                        var settingName = setting.Name;
+                        var settingName = setting.DisplayName ?? setting.Name;
                         
                         // Set tooltip immediately with description
                         var description = DescriptionFetcher.GetDescription(settingName);

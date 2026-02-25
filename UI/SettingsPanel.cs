@@ -193,7 +193,7 @@ public class SettingControl : Panel
         cb.SelectedItem = value;
     }
 
-    public SettingControl(SettingDefinition definition) : this(definition.Name, definition.Description, definition.Impact, definition)
+    public SettingControl(SettingDefinition definition) : this(definition.DisplayName ?? definition.Name, definition.Description, definition.Impact, definition)
     {
         _definition = definition;
     }

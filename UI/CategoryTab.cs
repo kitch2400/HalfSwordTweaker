@@ -34,6 +34,9 @@ public class CategoryTab : TabPage
     {
         Settings.Add(setting);
 
+        if (setting.Hidden)
+            return;
+
         var control = new SettingControl(setting);
         _settingControls[setting.Name] = control;
         _settingsPanel.Controls.Add(control);
@@ -67,8 +70,9 @@ public class CategoryTab : TabPage
             {
                 ini.DeleteValue("SystemSettings", "r.Tonemapper.Sharpen");
             }
-            // When switching from TSR[Kitch] to TSR, delete r.TSR.History.ScreenPercentage
-            else if (newValue == "4")
+
+            // Delete r.TSR.History.ScreenPercentage when AA is not TSR[Kitch]
+            if (newValue != "5")
             {
                 ini.DeleteValue("SystemSettings", "r.TSR.History.ScreenPercentage");
             }

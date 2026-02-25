@@ -54,6 +54,8 @@ public class SettingDefinition
 
     public string? DependsOnSetting { get; set; }
     public string? DependsOnValue { get; set; }
+    public string? DisplayName { get; set; }
+    public bool Hidden { get; set; }
 
     public SettingDefinition() { }
 
@@ -94,6 +96,21 @@ public class SettingDefinition
         };
     }
 
+    public static SettingDefinition NumericDependent(string name, string section, ConfigSource source,
+        decimal min, decimal max, string defaultValue, string description, PerformanceImpact impact, int decimalPlaces,
+        string dependsOnSetting, string dependsOnValue, string displayName)
+    {
+        return new SettingDefinition(name, section, source, ControlType.NumericUpDown, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DecimalPlaces = decimalPlaces,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue,
+            DisplayName = displayName
+        };
+    }
+
     public static SettingDefinition TrackBarInt(string name, string section, ConfigSource source,
         int min, int max, string defaultValue, string description, PerformanceImpact impact)
     {
@@ -114,6 +131,49 @@ public class SettingDefinition
             MaxValue = max,
             DependsOnSetting = dependsOnSetting,
             DependsOnValue = dependsOnValue
+        };
+    }
+
+    public static SettingDefinition TrackBarIntDependent(string name, string section, ConfigSource source,
+        int min, int max, string defaultValue, string description, PerformanceImpact impact,
+        string dependsOnSetting, string dependsOnValue, string displayName)
+    {
+        return new SettingDefinition(name, section, source, ControlType.TrackBar, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue,
+            DisplayName = displayName
+        };
+    }
+
+    public static SettingDefinition TrackBarIntDependent(string name, string section, ConfigSource source,
+        int min, int max, string defaultValue, string description, PerformanceImpact impact,
+        string dependsOnSetting, string dependsOnValue, bool hidden)
+    {
+        return new SettingDefinition(name, section, source, ControlType.TrackBar, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue,
+            Hidden = hidden
+        };
+    }
+
+    public static SettingDefinition TrackBarIntDependent(string name, string section, ConfigSource source,
+        int min, int max, string defaultValue, string description, PerformanceImpact impact,
+        string dependsOnSetting, string dependsOnValue, string displayName, bool hidden)
+    {
+        return new SettingDefinition(name, section, source, ControlType.TrackBar, defaultValue, description, impact)
+        {
+            MinValue = min,
+            MaxValue = max,
+            DependsOnSetting = dependsOnSetting,
+            DependsOnValue = dependsOnValue,
+            DisplayName = displayName,
+            Hidden = hidden
         };
     }
 

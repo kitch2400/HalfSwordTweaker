@@ -30,6 +30,47 @@ public class MainForm : Form
         InitializeComponent();
         LoadSettings();
         InitializeTooltips();
+        
+        Shown += MainForm_Shown;
+    }
+
+    private void MainForm_Shown(object? sender, EventArgs e)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = 100 };
+        timer.Tick += (s, args) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+            
+            int totalHeight = 40;
+            totalHeight += 60;
+            totalHeight += 25;
+            
+            int maxFlpHeight = 0;
+            foreach (TabPage tab in _tabControl.TabPages)
+            {
+                if (tab is CategoryTab catTab)
+                {
+                    var flp = catTab.Controls.OfType<FlowLayoutPanel>().FirstOrDefault();
+                    if (flp != null)
+                    {
+                        flp.PerformLayout();
+                        var h = flp.PreferredSize.Height;
+                        if (h > maxFlpHeight) maxFlpHeight = h;
+                    }
+                }
+            }
+            totalHeight += maxFlpHeight;
+            
+            int minWidth = 605;
+            int maxHeight = Screen.FromHandle(Handle).WorkingArea.Height - 30;
+            
+            if (totalHeight < 606) totalHeight = 606;
+            if (totalHeight > maxHeight) totalHeight = maxHeight;
+            
+            ClientSize = new Size(minWidth, totalHeight);
+        };
+        timer.Start();
     }
 
     private async void InitializeTooltips()
@@ -76,7 +117,8 @@ public class MainForm : Form
     private void InitializeComponent()
     {
         Text = "HalfSwordTweaker - By Kitch2400";
-        Size = new Size(1080, 700);
+        Size = new Size(605, 849);
+        MinimumSize = new Size(605, 606);
         StartPosition = FormStartPosition.CenterScreen;
 
         _tabControl.Dock = DockStyle.Fill;

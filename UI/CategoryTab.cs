@@ -21,8 +21,8 @@ public class CategoryTab : TabPage
             Dock = DockStyle.Fill,
             Padding = new Padding(10),
             AutoScroll = true,
-            WrapContents = true,
-            FlowDirection = FlowDirection.LeftToRight
+            WrapContents = false,
+            FlowDirection = FlowDirection.TopDown
         };
 
         _settingControls = new Dictionary<string, SettingControl>();

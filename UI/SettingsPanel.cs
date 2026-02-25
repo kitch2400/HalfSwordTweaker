@@ -285,8 +285,6 @@ public class SettingControl : Panel
 
         Controls.Add(descriptionLabel);
         Controls.Add(headerPanel);
-
-        Dock = DockStyle.Top;
     }
 
     private void WireUpInputControlEvents()

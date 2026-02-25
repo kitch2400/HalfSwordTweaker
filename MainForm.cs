@@ -608,7 +608,7 @@ public class MainForm : Form
         _isLoadingProfile = true;
         try
         {
-            var displayName = _profileComboBox.SelectedItem.ToString();
+            var displayName = _profileComboBox.SelectedItem?.ToString() ?? "";
             var profileName = ProfileManager.StripActivePrefix(displayName);
 
             if (profileName.Equals(ProfileManager.CustomProfileName, StringComparison.OrdinalIgnoreCase))

@@ -34,12 +34,13 @@ public class CategoryTab : TabPage
     {
         Settings.Add(setting);
 
-        if (setting.Hidden)
-            return;
-
         var control = new SettingControl(setting);
         _settingControls[setting.Name] = control;
-        _settingsPanel.Controls.Add(control);
+
+        if (!setting.Hidden)
+        {
+            _settingsPanel.Controls.Add(control);
+        }
     }
 
     public SettingControl? GetSettingControl(string settingName)

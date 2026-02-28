@@ -195,6 +195,8 @@ public class MainForm : Form
         InitializeTabs();
     }
 
+    private SaveGameTab? _saveEditorTab;
+
     private void InitializeTabs()
     {
         foreach (var tabKvp in SettingsRegistry.Tabs)
@@ -210,8 +212,8 @@ public class MainForm : Form
         }
 
         // Add Save Editor tab
-        var saveEditorTab = new SaveGameTab("Save Editor");
-        _tabControl.TabPages.Add(saveEditorTab);
+        _saveEditorTab = new SaveGameTab("User settings (Settings.sav)");
+        _tabControl.TabPages.Add(_saveEditorTab);
 
         WireUpScalabilityGroupChangeTracking();
         WireUpAADependentSettings();
@@ -481,6 +483,9 @@ public class MainForm : Form
                 }
             }
 
+            // Apply Save Editor settings
+            _saveEditorTab?.ApplySettings();
+
             if (_configManager.WriteAll())
             {
                 if (_hasScalabilityGroupChanges)
@@ -701,6 +706,7 @@ public class MainForm : Form
         if (_configManager.ReadAll())
         {
             PopulateSettingsFromConfig();
+            _saveEditorTab?.LoadSettings();
             _statusLabel.Text = "Settings refreshed.";
             _hasScalabilityGroupChanges = false;
         }

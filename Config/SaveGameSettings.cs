@@ -80,16 +80,6 @@ public static class SaveGameSettingsRegistry
             MaxValue = 2.0,
             DefaultValue = 1.0,
             Impact = PerformanceImpact.Low
-        },
-        new SaveGameSetting
-        {
-            Name = "Lock On Strength",
-            DisplayName = "Lock-On Strength",
-            Description = "Controls how strong the camera lock-on effect is",
-            MinValue = 0.0,
-            MaxValue = 1.0,
-            DefaultValue = 1.0,
-            Impact = PerformanceImpact.Low
         }
     };
 }

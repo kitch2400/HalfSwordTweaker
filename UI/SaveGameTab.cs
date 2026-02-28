@@ -170,8 +170,6 @@ public class SaveGameTab : TabPage
     private readonly SaveGameManager _saveGameManager;
     private readonly Dictionary<string, SaveGameSettingControl> _settingControls = new();
     private readonly BloodGorePresetControl? _presetControl;
-    private readonly Button _applyButton = new();
-    private readonly Button _refreshButton = new();
     private readonly FlowLayoutPanel _flowLayoutPanel = new();
 
     // Blood/Gore presets with their values
@@ -216,30 +214,8 @@ public class SaveGameTab : TabPage
         // Setup preset control
         _presetControl!.SelectedPresetChanged += PresetControl_SelectedPresetChanged;
 
-        // Setup buttons
-        var buttonPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 50,
-            Padding = new Padding(10)
-        };
-
-        _applyButton.Text = "Apply";
-        _applyButton.Width = 100;
-        _applyButton.Dock = DockStyle.Right;
-        _applyButton.Click += ApplyButton_Click;
-
-        _refreshButton.Text = "Refresh";
-        _refreshButton.Width = 100;
-        _refreshButton.Dock = DockStyle.Right;
-        _refreshButton.Click += RefreshButton_Click;
-
-        buttonPanel.Controls.Add(_applyButton);
-        buttonPanel.Controls.Add(_refreshButton);
-
         // Add controls to tab
         Controls.Add(_flowLayoutPanel);
-        Controls.Add(buttonPanel);
 
         // Add settings to the panel
         bool mouseSensitivityAdded = false;
@@ -317,7 +293,7 @@ public class SaveGameTab : TabPage
     /// <summary>
     /// Loads settings from the save game file.
     /// </summary>
-    private void LoadSettings()
+    public void LoadSettings()
     {
         if (!_saveGameManager.SaveGameDirectoryExists())
         {
@@ -388,7 +364,7 @@ public class SaveGameTab : TabPage
     /// <summary>
     /// Applies settings to the save game file.
     /// </summary>
-    private void ApplySettings()
+    public void ApplySettings()
     {
         var settings = new Dictionary<string, double>();
         
@@ -432,19 +408,4 @@ public class SaveGameTab : TabPage
         MessageBox.Show(this, message, title, MessageBoxButtons.OK, icon);
     }
 
-    /// <summary>
-    /// Handles the Apply button click event.
-    /// </summary>
-    private void ApplyButton_Click(object? sender, EventArgs e)
-    {
-        ApplySettings();
-    }
-
-    /// <summary>
-    /// Handles the Refresh button click event.
-    /// </summary>
-    private void RefreshButton_Click(object? sender, EventArgs e)
-    {
-        LoadSettings();
-    }
 }

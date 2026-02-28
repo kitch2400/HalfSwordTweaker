@@ -10,7 +10,6 @@ public class SaveGameSettingControl : Panel
 {
     private readonly Label _label;
     private readonly NumericUpDown _numericUpDown;
-    private readonly PerformanceIndicator _impactIndicator;
     private readonly Label _notSetLabel;
 
     public event EventHandler? ValueChanged;
@@ -45,7 +44,7 @@ public class SaveGameSettingControl : Panel
 
         _label = new Label
         {
-            Text = name,
+            Text = $"{name} ({minValue:0.00} - {maxValue:0.00})",
             AutoSize = true,
             Location = new Point(3, 3),
             Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold)
@@ -60,12 +59,6 @@ public class SaveGameSettingControl : Panel
             Visible = false
         };
 
-        _impactIndicator = new PerformanceIndicator
-        {
-            Impact = impact,
-            Location = new Point(500, 3)
-        };
-
         var headerPanel = new Panel
         {
             Dock = DockStyle.Top,
@@ -73,7 +66,6 @@ public class SaveGameSettingControl : Panel
         };
         headerPanel.Controls.Add(_label);
         headerPanel.Controls.Add(_notSetLabel);
-        headerPanel.Controls.Add(_impactIndicator);
 
         headerPanel.Layout += (s, e) =>
         {

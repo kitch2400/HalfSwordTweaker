@@ -120,7 +120,7 @@ public class SaveGameManager
             }
             
             // Write the updated data back to file
-            var updatedData = parser.SerializeSettings(settings);
+            var updatedData = parser.GetData();
             File.WriteAllBytes(_settingsSavePath, updatedData);
             
             return success;

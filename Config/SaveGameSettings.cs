@@ -57,7 +57,7 @@ public static class SaveGameSettingsRegistry
             DisplayName = "Mouse Sensitivity",
             Description = "Controls how sensitive the mouse is during gameplay",
             MinValue = 0.0,
-            MaxValue = 10.0,
+            MaxValue = 2.0,
             DefaultValue = 1.0,
             Impact = PerformanceImpact.Low
         },
@@ -67,7 +67,7 @@ public static class SaveGameSettingsRegistry
             DisplayName = "Blood Effects Intensity",
             Description = "Controls the intensity of blood effects in combat",
             MinValue = 0.0,
-            MaxValue = 5.0,
+            MaxValue = 2.0,
             DefaultValue = 1.0,
             Impact = PerformanceImpact.Low
         },
@@ -77,7 +77,7 @@ public static class SaveGameSettingsRegistry
             DisplayName = "Gore Effects Intensity",
             Description = "Controls the intensity of gore effects in combat",
             MinValue = 0.0,
-            MaxValue = 5.0,
+            MaxValue = 2.0,
             DefaultValue = 1.0,
             Impact = PerformanceImpact.Low
         },
@@ -87,7 +87,7 @@ public static class SaveGameSettingsRegistry
             DisplayName = "Lock-On Strength",
             Description = "Controls how strong the camera lock-on effect is",
             MinValue = 0.0,
-            MaxValue = 5.0,
+            MaxValue = 1.0,
             DefaultValue = 1.0,
             Impact = PerformanceImpact.Low
         }

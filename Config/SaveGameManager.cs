@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace HalfSwordTweaker.Config;
 
 /// <summary>
@@ -51,8 +53,11 @@ public class SaveGameManager
     /// <returns>A dictionary of setting names and their values.</returns>
     public Dictionary<string, double> ReadSettings()
     {
+        Console.Error.WriteLine($"[SaveGameManager] Reading from: {_settingsSavePath}");
+        
         if (!SettingsSaveExists())
         {
+            Console.Error.WriteLine($"[SaveGameManager] Settings.sav does not exist!");
             // Return default values if file doesn't exist
             var defaults = new Dictionary<string, double>();
             foreach (var setting in SaveGameSettingsRegistry.Settings)
@@ -65,11 +70,14 @@ public class SaveGameManager
         try
         {
             var data = File.ReadAllBytes(_settingsSavePath);
+            Console.Error.WriteLine($"[SaveGameManager] Read {data.Length} bytes");
             var parser = new GvasParser(data);
             return parser.ParseSettings();
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"[SaveGameManager] Exception reading settings: {ex.Message}");
+            Console.Error.WriteLine(ex.StackTrace);
             // Return defaults if parsing fails
             var defaults = new Dictionary<string, double>();
             foreach (var setting in SaveGameSettingsRegistry.Settings)
@@ -87,6 +95,9 @@ public class SaveGameManager
     /// <returns>True if successful; otherwise, false.</returns>
     public bool WriteSettings(Dictionary<string, double> settings)
     {
+        Console.Error.WriteLine($"[SaveGameManager] Writing to: {_settingsSavePath}");
+        Console.Error.WriteLine($"[SaveGameManager] Settings to write: {settings.Count}");
+        
         try
         {
             // Create backup first
@@ -97,9 +108,11 @@ public class SaveGameManager
             if (SettingsSaveExists())
             {
                 data = File.ReadAllBytes(_settingsSavePath);
+                Console.Error.WriteLine($"[SaveGameManager] Read {data.Length} bytes before write");
             }
             else
             {
+                Console.Error.WriteLine($"[SaveGameManager] Settings.sav does not exist, cannot write!");
                 // If file doesn't exist, we can't write settings
                 // A full implementation would create a new GVAS file
                 return false;
@@ -112,21 +125,69 @@ public class SaveGameManager
             bool success = true;
             foreach (var setting in settings)
             {
+                Console.Error.WriteLine($"[SaveGameManager] Updating '{setting.Key}' to {setting.Value}");
                 if (!parser.UpdateDoubleProperty(setting.Key, setting.Value))
                 {
+                    Console.Error.WriteLine($"[SaveGameManager] FAILED to update '{setting.Key}' - property not found or write failed");
                     success = false;
                     // Continue trying to update other settings
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[SaveGameManager] Successfully updated '{setting.Key}'");
                 }
             }
             
             // Write the updated data back to file
             var updatedData = parser.GetData();
+            Console.Error.WriteLine($"[SaveGameManager] Writing {updatedData.Length} bytes to file");
             File.WriteAllBytes(_settingsSavePath, updatedData);
+            Console.Error.WriteLine($"[SaveGameManager] File written successfully");
             
+            // VERIFY: Read back the file and confirm the values were written
+            var verifyBytes = File.ReadAllBytes(_settingsSavePath);
+            Console.Error.WriteLine($"[SaveGameManager] Verifying write: read back {verifyBytes.Length} bytes");
+            
+            if (!verifyBytes.SequenceEqual(updatedData))
+            {
+                Console.Error.WriteLine($"[SaveGameManager] Write verification FAILED: File contents don't match after write");
+                Console.Error.WriteLine($"  Expected length: {updatedData.Length}");
+                Console.Error.WriteLine($"  Actual length: {verifyBytes.Length}");
+                return false;
+            }
+            Console.Error.WriteLine($"[SaveGameManager] Byte verification passed");
+            
+            // Verify each property value was written correctly
+            var verifyParser = new GvasParser(verifyBytes);
+            var parsedSettings = verifyParser.ParseSettings();
+            
+            foreach (var setting in settings)
+            {
+                if (parsedSettings.TryGetValue(setting.Key, out var readValue))
+                {
+                    Console.Error.WriteLine($"[SaveGameManager] Verified '{setting.Key}': expected {setting.Value}, read {readValue}");
+                    if (Math.Abs(readValue - setting.Value) > 0.0001)
+                    {
+                        Console.Error.WriteLine($"[SaveGameManager] Value mismatch for '{setting.Key}':");
+                        Console.Error.WriteLine($"  Expected: {setting.Value}");
+                        Console.Error.WriteLine($"  Read back: {readValue}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[SaveGameManager] Property '{setting.Key}' not found in verification read!");
+                    return false;
+                }
+            }
+            
+            Console.Error.WriteLine($"[SaveGameManager] All values verified successfully");
             return success;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"[SaveGameManager] WriteSettings exception: {ex.Message}");
+            Console.Error.WriteLine(ex.StackTrace);
             return false;
         }
     }

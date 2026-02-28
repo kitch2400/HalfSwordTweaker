@@ -103,15 +103,84 @@ public class SaveGameSettingControl : Panel
 }
 
 /// <summary>
+/// Represents a blood/gore preset selector control.
+/// </summary>
+public class BloodGorePresetControl : Panel
+{
+    private readonly ComboBox _comboBox;
+    private readonly Label _label;
+
+    public event EventHandler? SelectedPresetChanged;
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string SelectedPreset
+    {
+        get => _comboBox.SelectedItem?.ToString() ?? "Gentle";
+        set => _comboBox.SelectedItem = value;
+    }
+
+    public BloodGorePresetControl()
+    {
+        Padding = new Padding(3);
+        Margin = new Padding(2);
+        Width = 520;
+        Height = 50;
+        Anchor = AnchorStyles.Left | AnchorStyles.Top;
+
+        _label = new Label
+        {
+            Text = "Blood/Gore Preset",
+            AutoSize = true,
+            Location = new Point(3, 3),
+            Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold),
+            ForeColor = Color.DarkRed
+        };
+
+        _comboBox = new ComboBox
+        {
+            Dock = DockStyle.Top,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            AutoSize = true,
+            Margin = new Padding(0, 5, 0, 0)
+        };
+
+        _comboBox.Items.AddRange(new[] { "Gentle", "Gruesome", "Grotesque", "Custom" });
+        _comboBox.SelectedItem = "Gentle";
+
+        _comboBox.SelectedIndexChanged += (s, e) => SelectedPresetChanged?.Invoke(this, EventArgs.Empty);
+
+        Controls.Add(_comboBox);
+        Controls.Add(_label);
+    }
+
+    public void ApplyPreset(decimal bloodValue, decimal goreValue)
+    {
+        _comboBox.SelectedItem = "Custom";
+        SelectedPresetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ComboBox GetComboBox() => _comboBox;
+}
+
+/// <summary>
 /// Represents a tab for editing save game settings.
 /// </summary>
 public class SaveGameTab : TabPage
 {
     private readonly SaveGameManager _saveGameManager;
     private readonly Dictionary<string, SaveGameSettingControl> _settingControls = new();
+    private readonly BloodGorePresetControl? _presetControl;
     private readonly Button _applyButton = new();
     private readonly Button _refreshButton = new();
     private readonly FlowLayoutPanel _flowLayoutPanel = new();
+
+    // Blood/Gore presets with their values
+    private static readonly Dictionary<string, (decimal Blood, decimal Gore)> Presets = new()
+    {
+        { "Gentle", (0.00m, 0.00m) },
+        { "Gruesome", (0.75m, 0.75m) },
+        { "Grotesque", (1.50m, 2.00m) }
+    };
 
     /// <summary>
     /// Gets the category name for this tab.
@@ -126,6 +195,7 @@ public class SaveGameTab : TabPage
     {
         CategoryName = categoryName;
         _saveGameManager = new SaveGameManager();
+        _presetControl = new BloodGorePresetControl();
         
         InitializeComponent();
         LoadSettings();
@@ -142,6 +212,9 @@ public class SaveGameTab : TabPage
         _flowLayoutPanel.AutoScroll = true;
         _flowLayoutPanel.Dock = DockStyle.Fill;
         _flowLayoutPanel.Padding = new Padding(10);
+
+        // Setup preset control
+        _presetControl!.SelectedPresetChanged += PresetControl_SelectedPresetChanged;
 
         // Setup buttons
         var buttonPanel = new Panel
@@ -169,9 +242,40 @@ public class SaveGameTab : TabPage
         Controls.Add(buttonPanel);
 
         // Add settings to the panel
+        bool mouseSensitivityAdded = false;
         foreach (var setting in SaveGameSettingsRegistry.Settings)
         {
             AddSetting(setting);
+            
+            // Insert preset dropdown after Mouse Sensitivity
+            if (!mouseSensitivityAdded && setting.Name == "Mouse Sensitivity")
+            {
+                mouseSensitivityAdded = true;
+                _flowLayoutPanel.Controls.Add(_presetControl);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Handles preset selection changes.
+    /// </summary>
+    private void PresetControl_SelectedPresetChanged(object? sender, EventArgs e)
+    {
+        if (_presetControl == null) return;
+        
+        var selectedPreset = _presetControl.SelectedPreset;
+        
+        // Only apply if it's a predefined preset (not Custom)
+        if (Presets.TryGetValue(selectedPreset, out var values))
+        {
+            var bloodControl = GetSettingControl("Blood Rate");
+            var goreControl = GetSettingControl("Gore Rate");
+            
+            if (bloodControl != null)
+                bloodControl.Value = values.Blood.ToString();
+                
+            if (goreControl != null)
+                goreControl.Value = values.Gore.ToString();
         }
     }
 
@@ -189,8 +293,25 @@ public class SaveGameTab : TabPage
             (decimal)setting.MaxValue,
             (decimal)setting.DefaultValue);
         
+        // Wire up value changed handler for Blood and Gore to detect custom values
+        if (setting.Name == "Blood Rate" || setting.Name == "Gore Rate")
+        {
+            settingControl.ValueChanged += (s, e) => HandleBloodGoreValueChanged();
+        }
+        
         _flowLayoutPanel.Controls.Add(settingControl);
         _settingControls[setting.Name] = settingControl;
+    }
+
+    /// <summary>
+    /// Handles value changes in Blood or Gore settings.
+    /// </summary>
+    private void HandleBloodGoreValueChanged()
+    {
+        if (_presetControl == null) return;
+        
+        // Check if current values match any preset
+        DetectAndSetPreset();
     }
 
     /// <summary>
@@ -219,6 +340,49 @@ public class SaveGameTab : TabPage
                 control.IsNotSet = false;
             }
         }
+
+        // Detect and set the appropriate preset
+        DetectAndSetPreset();
+    }
+
+    /// <summary>
+    /// Detects the current blood/gore values and sets the matching preset.
+    /// </summary>
+    private void DetectAndSetPreset()
+    {
+        if (_presetControl == null) return;
+        
+        var bloodControl = GetSettingControl("Blood Rate");
+        var goreControl = GetSettingControl("Gore Rate");
+        
+        if (bloodControl == null || goreControl == null)
+            return;
+
+        // Parse current values
+        if (!decimal.TryParse(bloodControl.Value, out var bloodValue) ||
+            !decimal.TryParse(goreControl.Value, out var goreValue))
+        {
+            // Default to Gentle if we can't parse values
+            _presetControl.GetComboBox().SelectedItem = "Gentle";
+            return;
+        }
+
+        // Try to match against known presets (with tolerance for floating point)
+        const decimal tolerance = 0.01m;
+        string? matchedPreset = null;
+
+        foreach (var preset in Presets)
+        {
+            if (Math.Abs(bloodValue - preset.Value.Blood) < tolerance &&
+                Math.Abs(goreValue - preset.Value.Gore) < tolerance)
+            {
+                matchedPreset = preset.Key;
+                break;
+            }
+        }
+
+        // Set to Custom if no preset matches, otherwise set to matched preset
+        _presetControl.GetComboBox().SelectedItem = matchedPreset ?? "Custom";
     }
 
     /// <summary>
@@ -230,7 +394,8 @@ public class SaveGameTab : TabPage
         
         foreach (var kvp in _settingControls)
         {
-            if (double.TryParse(kvp.Value.Value, out var value))
+            // Use InvariantCulture to ensure consistent decimal separator (.)
+            if (double.TryParse(kvp.Value.Value, System.Globalization.CultureInfo.InvariantCulture, out var value))
             {
                 settings[kvp.Key] = value;
             }
@@ -238,11 +403,11 @@ public class SaveGameTab : TabPage
 
         if (_saveGameManager.WriteSettings(settings))
         {
-            ShowMessage("Settings saved successfully.", "Success", MessageBoxIcon.Information);
+            // Silent success - no popup needed
         }
         else
         {
-            ShowMessage("Failed to save settings.", "Error", MessageBoxIcon.Error);
+            ShowMessage("Failed to save settings. Check debug output for details.", "Error", MessageBoxIcon.Error);
         }
     }
 

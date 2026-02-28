@@ -9,12 +9,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationVersion>0.4</ApplicationVersion>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
-    <FileVersion>0.4.0.0</FileVersion>
-    <InformationalVersion>0.4</InformationalVersion>
-    <Product>Half Sword Tweaker</Product>
-    <Company>Kitch2400</Company>
-    <Copyright>Copyright © Kitch2400</Copyright>
+    <ApplicationVersion>0.5</ApplicationVersion>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+    <FileVersion>0.5.0.0</FileVersion>
+    <InformationalVersion>0.5</InformationalVersion>
+
   </PropertyGroup>
 </Project>

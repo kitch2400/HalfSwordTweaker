@@ -196,6 +196,7 @@ public class MainForm : Form
     }
 
     private SaveGameTab? _saveEditorTab;
+    private GameProgressTab? _gameProgressTab;
 
     private void InitializeTabs()
     {
@@ -214,6 +215,10 @@ public class MainForm : Form
         // Add Save Editor tab
         _saveEditorTab = new SaveGameTab("User settings (Settings.sav)");
         _tabControl.TabPages.Add(_saveEditorTab);
+
+        // Add Game Progress tab
+        _gameProgressTab = new GameProgressTab();
+        _tabControl.TabPages.Add(_gameProgressTab);
 
         WireUpScalabilityGroupChangeTracking();
         WireUpAADependentSettings();
@@ -485,6 +490,9 @@ public class MainForm : Form
 
             // Apply Save Editor settings
             _saveEditorTab?.ApplySettings();
+
+            // Apply Game Progress settings
+            _gameProgressTab?.ApplySettings();
 
             if (_configManager.WriteAll())
             {

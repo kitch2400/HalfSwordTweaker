@@ -108,7 +108,7 @@ public class SaveGameSettingControl : Panel
 public class BloodGorePresetControl : Panel
 {
     private readonly ComboBox _comboBox;
-    private readonly Label _label;
+    private readonly Label _presetLabel;
 
     public event EventHandler? SelectedPresetChanged;
 
@@ -124,24 +124,23 @@ public class BloodGorePresetControl : Panel
         Padding = new Padding(3);
         Margin = new Padding(2);
         Width = 520;
-        Height = 50;
+        Height = 65;
         Anchor = AnchorStyles.Left | AnchorStyles.Top;
 
-        _label = new Label
+        _presetLabel = new Label
         {
             Text = "Blood/Gore Preset",
             AutoSize = true,
             Location = new Point(3, 3),
-            Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold),
-            ForeColor = Color.DarkRed
+            Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold)
         };
 
         _comboBox = new ComboBox
         {
-            Dock = DockStyle.Top,
             DropDownStyle = ComboBoxStyle.DropDownList,
             AutoSize = true,
-            Margin = new Padding(0, 5, 0, 0)
+            Location = new Point(3, 25),
+            Width = 514
         };
 
         _comboBox.Items.AddRange(new[] { "Gentle", "Gruesome", "Grotesque", "Custom" });
@@ -150,7 +149,7 @@ public class BloodGorePresetControl : Panel
         _comboBox.SelectedIndexChanged += (s, e) => SelectedPresetChanged?.Invoke(this, EventArgs.Empty);
 
         Controls.Add(_comboBox);
-        Controls.Add(_label);
+        Controls.Add(_presetLabel);
     }
 
     public void ApplyPreset(decimal bloodValue, decimal goreValue)
@@ -334,23 +333,34 @@ public class SaveGameTab : TabPage
         if (bloodControl == null || goreControl == null)
             return;
 
-        // Parse current values
-        if (!decimal.TryParse(bloodControl.Value, out var bloodValue) ||
-            !decimal.TryParse(goreControl.Value, out var goreValue))
+        // Parse current values (use InvariantCulture to handle dot decimal separator)
+        if (!decimal.TryParse(bloodControl.Value, 
+            System.Globalization.NumberStyles.Any, 
+            System.Globalization.CultureInfo.InvariantCulture, 
+            out var bloodValue) ||
+            !decimal.TryParse(goreControl.Value, 
+            System.Globalization.NumberStyles.Any, 
+            System.Globalization.CultureInfo.InvariantCulture, 
+            out var goreValue))
         {
             // Default to Gentle if we can't parse values
             _presetControl.GetComboBox().SelectedItem = "Gentle";
             return;
         }
 
-        // Try to match against known presets (with tolerance for floating point)
-        const decimal tolerance = 0.01m;
+        // Round to 2 decimal places to handle floating-point precision issues
+        bloodValue = Math.Round(bloodValue, 2);
+        goreValue = Math.Round(goreValue, 2);
+
+        // Try to match against known presets
         string? matchedPreset = null;
 
         foreach (var preset in Presets)
         {
-            if (Math.Abs(bloodValue - preset.Value.Blood) < tolerance &&
-                Math.Abs(goreValue - preset.Value.Gore) < tolerance)
+            var presetBlood = Math.Round(preset.Value.Blood, 2);
+            var presetGore = Math.Round(preset.Value.Gore, 2);
+            
+            if (bloodValue == presetBlood && goreValue == presetGore)
             {
                 matchedPreset = preset.Key;
                 break;

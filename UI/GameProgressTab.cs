@@ -194,6 +194,70 @@ public class GameProgressDoubleControl : Panel
 }
 
 /// <summary>
+/// Represents a control for editing a byte game progress setting.
+/// </summary>
+public class GameProgressByteControl : Panel
+{
+    private readonly Label _label;
+    private readonly NumericUpDown _numericUpDown;
+
+    public event EventHandler? ValueChanged;
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public byte Value
+    {
+        get => (byte)_numericUpDown.Value;
+        set => _numericUpDown.Value = Math.Clamp(value, (byte)_numericUpDown.Minimum, (byte)_numericUpDown.Maximum);
+    }
+
+    public GameProgressByteControl(string name, string description, byte minValue, byte maxValue, byte defaultValue)
+    {
+        Padding = new Padding(3);
+        Margin = new Padding(2);
+        Width = 520;
+        Height = 65;
+        Anchor = AnchorStyles.Left | AnchorStyles.Top;
+
+        _label = new Label
+        {
+            Text = $"{name} ({minValue} - {maxValue})",
+            AutoSize = true,
+            Location = new Point(3, 3),
+            Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold)
+        };
+
+        var descriptionLabel = new Label
+        {
+            Text = description,
+            AutoSize = true,
+            MaximumSize = new Size(510, 0),
+            Dock = DockStyle.Top,
+            ForeColor = Color.Gray,
+            Font = new Font(FontFamily.GenericSansSerif, 7.5F),
+            Padding = new Padding(3, 0, 3, 0)
+        };
+
+        _numericUpDown = new NumericUpDown
+        {
+            Dock = DockStyle.Top,
+            Minimum = minValue,
+            Maximum = maxValue,
+            DecimalPlaces = 0,
+            Increment = 1,
+            Value = Math.Clamp(defaultValue, minValue, maxValue)
+        };
+
+        _numericUpDown.ValueChanged += (s, e) => ValueChanged?.Invoke(this, EventArgs.Empty);
+
+        Controls.Add(_numericUpDown);
+        Controls.Add(descriptionLabel);
+        Controls.Add(_label);
+    }
+
+    public Control GetInputControl() => _numericUpDown;
+}
+
+/// <summary>
 /// Represents a tab for editing game progress settings.
 /// </summary>
 public class GameProgressTab : TabPage
@@ -281,6 +345,16 @@ public class GameProgressTab : TabPage
                     setting.DefaultValue);
                 ((GameProgressDoubleControl)control).ValueChanged += Setting_ValueChanged;
                 break;
+
+            case GvasPropertyType.ByteProperty:
+                control = new GameProgressByteControl(
+                    setting.DisplayName,
+                    setting.Description,
+                    (byte)setting.MinValue,
+                    (byte)setting.MaxValue,
+                    (byte)setting.DefaultValue);
+                ((GameProgressByteControl)control).ValueChanged += Setting_ValueChanged;
+                break;
         }
 
         if (control != null)
@@ -336,6 +410,13 @@ public class GameProgressTab : TabPage
                         if (kvp.Value is double doubleValue)
                             doubleControl.Value = doubleValue;
                         break;
+
+                    case GameProgressByteControl byteControl:
+                        if (kvp.Value is byte byteValue)
+                            byteControl.Value = byteValue;
+                        else if (kvp.Value is int iValue)
+                            byteControl.Value = (byte)iValue;
+                        break;
                 }
             }
         }
@@ -364,6 +445,10 @@ public class GameProgressTab : TabPage
 
                 case GameProgressDoubleControl doubleControl:
                     properties[kvp.Key] = doubleControl.Value;
+                    break;
+
+                case GameProgressByteControl byteControl:
+                    properties[kvp.Key] = byteControl.Value;
                     break;
             }
         }

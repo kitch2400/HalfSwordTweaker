@@ -17,40 +17,28 @@ public class GameProgressManager
         _backupPath = Path.Combine(appData, "HalfSwordTweaker", "Backups", "GameProgress.sav.bak");
     }
 
-    /// <summary>
-    /// Checks if the GameProgress.sav file exists.
-    /// </summary>
-    public bool GameProgressExists()
-    {
-        return File.Exists(_gameProgressPath);
-    }
+    public bool GameProgressExists() => File.Exists(_gameProgressPath);
+    public bool SaveGameDirectoryExists() => Directory.Exists(Path.GetDirectoryName(_gameProgressPath));
 
-    /// <summary>
-    /// Checks if the save game directory exists.
-    /// </summary>
-    public bool SaveGameDirectoryExists()
-    {
-        var dir = Path.GetDirectoryName(_gameProgressPath);
-        return dir != null && Directory.Exists(dir);
-    }
-
-    /// <summary>
-    /// Reads all properties from GameProgress.sav.
-    /// </summary>
     public Dictionary<string, object> ReadProperties()
     {
         var properties = new Dictionary<string, object>();
 
         if (!GameProgressExists())
         {
+            Console.WriteLine("[GameProgressManager] GameProgress.sav not found");
             return properties;
         }
 
         try
         {
             var data = File.ReadAllBytes(_gameProgressPath);
+            
+            // Use working direct-search parser (struct parsing not yet implemented)
             var parser = new GameProgressParser(data);
             properties = parser.ParseProperties();
+            
+            Console.WriteLine($"[GameProgressManager] Parsed {properties.Count} properties");
         }
         catch (Exception ex)
         {
@@ -61,8 +49,7 @@ public class GameProgressManager
     }
 
     /// <summary>
-    /// Writes updated properties to GameProgress.sav.
-    /// </summary>
+    /// Flatten nested GVAS properties into a flat dictionary with full property names.
     public bool WriteProperties(Dictionary<string, object> properties)
     {
         try
@@ -73,19 +60,16 @@ public class GameProgressManager
                 return false;
             }
 
-            // Create backup before modifying
             CreateBackup();
 
             var data = File.ReadAllBytes(_gameProgressPath);
             var parser = new GameProgressParser(data);
 
-            // Update each property
             foreach (var kvp in properties)
             {
                 parser.UpdateProperty(kvp.Key, kvp.Value);
             }
 
-            // Write back to file
             File.WriteAllBytes(_gameProgressPath, parser.GetData());
             Console.WriteLine($"[GameProgressManager] Successfully wrote GameProgress.sav");
             return true;
@@ -97,9 +81,6 @@ public class GameProgressManager
         }
     }
 
-    /// <summary>
-    /// Creates a backup of the GameProgress.sav file.
-    /// </summary>
     private void CreateBackup()
     {
         try
@@ -124,7 +105,7 @@ public class GameProgressManager
 }
 
 /// <summary>
-/// Parses and serializes GameProgress.sav GVAS format.
+/// Parses and serializes GameProgress.sav GVAS format with struct support.
 /// </summary>
 public class GameProgressParser
 {
@@ -135,34 +116,39 @@ public class GameProgressParser
         _data = data ?? throw new ArgumentNullException(nameof(data));
     }
 
-    /// <summary>
-    /// Parses all properties from the GVAS data.
-    /// </summary>
     public Dictionary<string, object> ParseProperties()
     {
         var properties = new Dictionary<string, object>();
 
         try
         {
-            // Verify GVAS header
+            Console.WriteLine($"[GameProgressParser] Initialized parser with {_data.Length} bytes");
+
             if (!VerifyHeader())
             {
                 Console.WriteLine("[GameProgressParser] Invalid GVAS header");
                 return properties;
             }
 
-            // Parse known properties
+            // Parse all properties
             foreach (var setting in GameProgressSettingsRegistry.Settings)
             {
-                var value = FindPropertyByName(setting.Name);
-                if (value != null)
+                try
                 {
-                    properties[setting.Name] = value;
-                    Console.WriteLine($"[GameProgressParser] Found {setting.Name} = {value}");
+                    var value = FindPropertyByName(setting.Name);
+                    if (value != null)
+                    {
+                        properties[setting.Name] = value;
+                        Console.WriteLine($"[GameProgressParser] Found {setting.Name} = {value}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[GameProgressParser] Property '{setting.Name}' not found");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"[GameProgressParser] Property '{setting.Name}' not found");
+                    Console.WriteLine($"[GameProgressParser] Error reading {setting.Name}: {ex.Message}");
                 }
             }
         }
@@ -174,24 +160,12 @@ public class GameProgressParser
         return properties;
     }
 
-    /// <summary>
-    /// Updates a property value in the GVAS data.
-    /// </summary>
     public bool UpdateProperty(string propertyName, object value)
     {
         try
         {
             Console.WriteLine($"[GameProgressParser] Updating {propertyName} to {value}");
 
-            // Find the property
-            int propertyStart = FindPropertyOffset(propertyName);
-            if (propertyStart < 0)
-            {
-                Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found");
-                return false;
-            }
-
-            // Get property type
             var setting = GameProgressSettingsRegistry.Settings.FirstOrDefault(s => s.Name == propertyName);
             if (setting == null)
             {
@@ -199,39 +173,21 @@ public class GameProgressParser
                 return false;
             }
 
-            // Update based on property type
-            switch (setting.PropertyType)
+            // Check if property is nested in a struct
+            if (setting.ParentStruct != null)
             {
-                case GvasPropertyType.IntProperty:
-                    if (value is int intValue || value is double dValue && TryConvertToInt(dValue, out intValue))
-                    {
-                        UpdateIntProperty(propertyStart, intValue);
-                    }
-                    break;
-
-                case GvasPropertyType.BoolProperty:
-                    if (value is bool boolValue)
-                    {
-                        UpdateBoolProperty(propertyStart, boolValue);
-                    }
-                    else if (value is int iValue)
-                    {
-                        UpdateBoolProperty(propertyStart, iValue != 0);
-                    }
-                    break;
-
-                case GvasPropertyType.DoubleProperty:
-                    if (value is double doubleValue)
-                    {
-                        UpdateDoubleProperty(propertyStart, doubleValue);
-                    }
-                    else if (value is int iValue)
-                    {
-                        UpdateDoubleProperty(propertyStart, (double)iValue);
-                    }
-                    break;
+                return UpdatePropertyInStruct(setting.ParentStruct, propertyName, value, setting.PropertyType);
             }
 
+            // Global property update
+            int propertyStart = FindPropertyOffset(propertyName);
+            if (propertyStart < 0)
+            {
+                Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found");
+                return false;
+            }
+
+            UpdatePropertyValue(propertyStart, setting.PropertyType, value);
             Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName}");
             return true;
         }
@@ -242,17 +198,8 @@ public class GameProgressParser
         }
     }
 
-    /// <summary>
-    /// Returns the modified data.
-    /// </summary>
-    public byte[] GetData()
-    {
-        return (byte[])_data.Clone();
-    }
+    public byte[] GetData() => (byte[])_data.Clone();
 
-    /// <summary>
-    /// Verifies the GVAS header.
-    /// </summary>
     private bool VerifyHeader()
     {
         if (_data.Length < 48)
@@ -261,7 +208,6 @@ public class GameProgressParser
             return false;
         }
 
-        // Check for "GVAS" magic
         if (_data[0] != 0x47 || _data[1] != 0x56 || _data[2] != 0x41 || _data[3] != 0x53)
         {
             Console.WriteLine("[GameProgressParser] Invalid GVAS magic");
@@ -273,28 +219,60 @@ public class GameProgressParser
     }
 
     /// <summary>
-    /// Finds a property by name and returns its value.
+    /// Find property by name, checking parent struct if applicable.
     /// </summary>
     private object? FindPropertyByName(string propertyName)
     {
-        int offset = FindPropertyOffset(propertyName);
-        if (offset < 0) return null;
-
         var setting = GameProgressSettingsRegistry.Settings.FirstOrDefault(s => s.Name == propertyName);
         if (setting == null) return null;
 
-        return ReadPropertyValue(offset, setting.PropertyType);
+        // Check if property is nested in a struct
+        if (setting.ParentStruct != null)
+        {
+            return FindPropertyInStruct(setting.ParentStruct, propertyName, setting.PropertyType);
+        }
+
+        // Global search for non-nested properties
+        return FindPropertyByNameGlobal(propertyName, setting.PropertyType);
     }
 
     /// <summary>
-    /// Finds the offset of a property by name.
+    /// Find property within Player Character struct by searching for the property name directly.
     /// </summary>
-    private int FindPropertyOffset(string propertyName)
+    private object? FindPropertyInStruct(string structName, string propertyName, GvasPropertyType propertyType)
+    {
+        try
+        {
+            // For Player Character struct, search directly for the nested property name
+            // since the struct parsing is complex and error-prone
+            if (structName == "Player Character")
+            {
+                // Extract just the property name part after the dot (e.g., "Height_21_..." from "Player Character_0.Height_21_...")
+                int dotIndex = propertyName.IndexOf('.');
+                string actualPropertyName = dotIndex > 0 ? propertyName.Substring(dotIndex + 1) : propertyName;
+                return FindNestedPropertyDirectly(actualPropertyName, propertyType);
+            }
+
+            Console.WriteLine($"[GameProgressParser] Struct '{structName}' not supported for nested properties yet");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GameProgressParser] Error reading from struct '{structName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Search for a nested property by name directly in the file.
+    /// </summary>
+    private object? FindNestedPropertyDirectly(string propertyName, GvasPropertyType propertyType)
     {
         var nameBytes = Encoding.UTF8.GetBytes(propertyName);
         var nameWithNull = new byte[nameBytes.Length + 1];
         Array.Copy(nameBytes, nameWithNull, nameBytes.Length);
 
+        // Search for the property name (it should be unique in the file)
         for (int i = 0; i <= _data.Length - nameWithNull.Length; i++)
         {
             bool match = true;
@@ -309,7 +287,172 @@ public class GameProgressParser
 
             if (match)
             {
-                return i;
+                Console.WriteLine($"[GameProgressParser] Found '{propertyName}' at offset {i}");
+
+                // Parse property header to get value
+                int pos = i + nameWithNull.Length;
+
+                // Read type length
+                if (pos + 4 > _data.Length) return null;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (typeLen < 0 || typeLen > 100 || pos + typeLen > _data.Length) return null;
+                pos += typeLen; // Skip type name
+
+                // Skip unknown (4 bytes for nested properties)
+                if (pos + 4 > _data.Length) return null;
+                pos += 4;
+
+                // Read size
+                if (pos + 4 > _data.Length) return null;
+                int size = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                // Skip array index (1 byte)
+                if (pos + 1 > _data.Length) return null;
+                pos += 1;
+
+                // Read value
+                return ReadValueAtPosition(pos, size, propertyType, _data.Length);
+            }
+        }
+
+        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found");
+        return null;
+    }
+
+    /// <summary>
+    /// Find a nested property within struct boundaries.
+    /// </summary>
+    private object? FindNestedProperty(int startPos, int endPos, string propertyName, GvasPropertyType propertyType)
+    {
+        int pos = startPos;
+
+        while (pos < endPos - 10)
+        {
+            // Read nested property name
+            if (pos >= _data.Length || _data[pos] == 0)
+            {
+                pos++;
+                continue;
+            }
+
+            int nameStart = pos;
+            while (pos < endPos && _data[pos] != 0) pos++;
+            if (pos >= endPos) break;
+
+            var propNameBytes = new byte[pos - nameStart];
+            Array.Copy(_data, nameStart, propNameBytes, 0, propNameBytes.Length);
+            var propName = Encoding.UTF8.GetString(propNameBytes);
+            pos++; // Skip null
+
+            // Check if this is the property we're looking for
+            if (propName == propertyName || propName == propertyName + "_0")
+            {
+                Console.WriteLine($"[GameProgressParser] Found nested property '{propertyName}' at offset {pos - propName.Length - 1}");
+
+                // Read type length
+                if (pos + 4 > endPos) return null;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (pos + typeLen > endPos) return null;
+                pos += typeLen; // Skip type name
+
+                // Skip unknown (4 bytes for regular properties)
+                if (pos + 4 > endPos) return null;
+                pos += 4;
+
+                // Read size
+                if (pos + 4 > endPos) return null;
+                int size = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                // Skip array index (1 byte)
+                if (pos + 1 > endPos) return null;
+                pos += 1;
+
+                // Read value based on type
+                return ReadValueAtPosition(pos, size, propertyType, endPos);
+            }
+            else
+            {
+                // Skip this nested property
+                if (pos + 4 > endPos) break;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (pos + typeLen > endPos) break;
+                pos += typeLen;
+
+                if (pos + 4 > endPos) break;
+                pos += 4;
+
+                if (pos + 4 > endPos) break;
+                int size = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (pos + 1 > endPos) break;
+                pos += 1; // Skip array index
+
+                if (size < 0 || pos + size > endPos) break;
+                pos += size; // Skip value
+            }
+        }
+
+        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found in struct");
+        return null;
+    }
+
+    /// <summary>
+    /// Global property search (for non-nested properties).
+    /// </summary>
+    private object? FindPropertyByNameGlobal(string propertyName, GvasPropertyType propertyType)
+    {
+        int offset = FindPropertyOffset(propertyName);
+        if (offset < 0)
+        {
+            Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found (tried with _0 suffix)");
+            return null;
+        }
+
+        return ReadPropertyValue(offset, propertyType);
+    }
+
+    /// <summary>
+    /// Find the offset of a property by name (global search).
+    /// </summary>
+    private int FindPropertyOffset(string propertyName)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(propertyName);
+        var nameWithNull = new byte[nameBytes.Length + 1];
+        Array.Copy(nameBytes, nameWithNull, nameBytes.Length);
+
+        // Search backwards from the end
+        for (int i = _data.Length - nameWithNull.Length; i >= 0; i--)
+        {
+            bool match = true;
+            for (int j = 0; j < nameWithNull.Length; j++)
+            {
+                if (_data[i + j] != nameWithNull[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                int pos = i + nameWithNull.Length;
+                if (pos + 4 <= _data.Length)
+                {
+                    int typeLength = BitConverter.ToInt32(_data, pos);
+                    if (typeLength >= 5 && typeLength <= 30 && pos + typeLength + 8 <= _data.Length)
+                    {
+                        return i;
+                    }
+                }
             }
         }
 
@@ -317,7 +460,7 @@ public class GameProgressParser
     }
 
     /// <summary>
-    /// Reads a property value at the given offset.
+    /// Read property value at given offset.
     /// </summary>
     private object? ReadPropertyValue(int propertyOffset, GvasPropertyType propertyType)
     {
@@ -325,9 +468,9 @@ public class GameProgressParser
         {
             int pos = propertyOffset;
 
-            // Skip property name + null terminator
+            // Skip property name + null
             while (pos < _data.Length && _data[pos] != 0) pos++;
-            pos++; // Skip null
+            pos++;
 
             // Read type length
             if (pos + 4 > _data.Length) return null;
@@ -345,29 +488,10 @@ public class GameProgressParser
             int size = BitConverter.ToInt32(_data, pos);
             pos += 4;
 
-            // Read value based on type
-            switch (propertyType)
-            {
-                case GvasPropertyType.IntProperty:
-                    if (pos + 4 <= _data.Length)
-                        return BitConverter.ToInt32(_data, pos);
-                    return null;
+            // Skip array index (1 byte)
+            pos += 1;
 
-                case GvasPropertyType.BoolProperty:
-                    if (pos + 1 <= _data.Length)
-                        return _data[pos] != 0;
-                    return null;
-
-                case GvasPropertyType.DoubleProperty:
-                    if (pos + 8 <= _data.Length)
-                        return BitConverter.ToDouble(_data, pos);
-                    return null;
-
-                default:
-                    return null;
-            }
-
-            return null;
+            return ReadValueAtPosition(pos, size, propertyType, _data.Length);
         }
         catch (Exception ex)
         {
@@ -377,38 +501,41 @@ public class GameProgressParser
     }
 
     /// <summary>
-    /// Updates an IntProperty value.
+    /// Read value at position based on type and size.
     /// </summary>
-    private void UpdateIntProperty(int propertyOffset, int value)
+    private object? ReadValueAtPosition(int pos, int size, GvasPropertyType propertyType, int maxPos)
     {
-        int pos = propertyOffset;
+        switch (propertyType)
+        {
+            case GvasPropertyType.IntProperty:
+                if (pos + 4 <= maxPos)
+                    return BitConverter.ToInt32(_data, pos);
+                return null;
 
-        // Skip property name + null
-        while (pos < _data.Length && _data[pos] != 0) pos++;
-        pos++;
+            case GvasPropertyType.BoolProperty:
+                if (pos + 1 <= maxPos)
+                    return _data[pos] != 0;
+                return null;
 
-        // Skip type length (4 bytes)
-        pos += 4;
+            case GvasPropertyType.DoubleProperty:
+                if (pos + 8 <= maxPos)
+                    return BitConverter.ToDouble(_data, pos);
+                return null;
 
-        // Read type length to skip type name
-        int typeLen = BitConverter.ToInt32(_data, pos - 4);
-        pos += typeLen;
+            case GvasPropertyType.ByteProperty:
+                if (pos + 1 <= maxPos && size >= 1)
+                    return _data[pos];
+                return null;
 
-        // Skip unknown (4 bytes)
-        pos += 4;
-
-        // Skip size field (4 bytes)
-        pos += 4;
-
-        // Write new int value
-        byte[] valueBytes = BitConverter.GetBytes(value);
-        Array.Copy(valueBytes, 0, _data, pos, 4);
+            default:
+                return null;
+        }
     }
 
     /// <summary>
-    /// Updates a BoolProperty value.
+    /// Update property value at given offset.
     /// </summary>
-    private void UpdateBoolProperty(int propertyOffset, bool value)
+    private void UpdatePropertyValue(int propertyOffset, GvasPropertyType propertyType, object value)
     {
         int pos = propertyOffset;
 
@@ -429,37 +556,275 @@ public class GameProgressParser
         // Skip size field (4 bytes)
         pos += 4;
 
-        // Write new bool value
-        _data[pos] = value ? (byte)1 : (byte)0;
+        // Skip array index (1 byte)
+        pos += 1;
+
+        // Write new value based on type
+        switch (propertyType)
+        {
+            case GvasPropertyType.IntProperty:
+                if (value is int intValue)
+                {
+                    byte[] valueBytes = BitConverter.GetBytes(intValue);
+                    Array.Copy(valueBytes, 0, _data, pos, 4);
+                }
+                break;
+
+            case GvasPropertyType.BoolProperty:
+                _data[pos] = value is bool bVal ? (byte)(bVal ? 1 : 0) : (byte)((int)value != 0 ? 1 : 0);
+                break;
+
+            case GvasPropertyType.DoubleProperty:
+                if (value is double doubleValue)
+                {
+                    byte[] valueBytes = BitConverter.GetBytes(doubleValue);
+                    Array.Copy(valueBytes, 0, _data, pos, 8);
+                }
+                else if (value is int intVal)
+                {
+                    byte[] valueBytes = BitConverter.GetBytes((double)intVal);
+                    Array.Copy(valueBytes, 0, _data, pos, 8);
+                }
+                break;
+
+            case GvasPropertyType.ByteProperty:
+                if (value is byte byteValue)
+                {
+                    _data[pos] = byteValue;
+                }
+                else if (value is int iValue && iValue >= 0 && iValue <= 255)
+                {
+                    _data[pos] = (byte)iValue;
+                }
+                break;
+        }
     }
 
     /// <summary>
-    /// Updates a DoubleProperty value.
+    /// Update property within Player Character struct.
     /// </summary>
-    private void UpdateDoubleProperty(int propertyOffset, double value)
+    private bool UpdatePropertyInStruct(string structName, string propertyName, object value, GvasPropertyType propertyType)
     {
-        int pos = propertyOffset;
+        // For Player Character struct, search directly for the property
+        if (structName == "Player Character")
+        {
+            return UpdateNestedPropertyDirectly(propertyName, propertyType, value);
+        }
 
-        // Skip property name + null
-        while (pos < _data.Length && _data[pos] != 0) pos++;
-        pos++;
+        Console.WriteLine($"[GameProgressParser] Struct '{structName}' update not supported yet");
+        return false;
+    }
 
-        // Skip type length (4 bytes)
-        pos += 4;
+    /// <summary>
+    /// Update a nested property by searching for it directly.
+    /// </summary>
+    private bool UpdateNestedPropertyDirectly(string propertyName, GvasPropertyType propertyType, object value)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(propertyName);
+        var nameWithNull = new byte[nameBytes.Length + 1];
+        Array.Copy(nameBytes, nameWithNull, nameBytes.Length);
 
-        // Read type length to skip type name
-        int typeLen = BitConverter.ToInt32(_data, pos - 4);
-        pos += typeLen;
+        // Search for the property name
+        for (int i = 0; i <= _data.Length - nameWithNull.Length; i++)
+        {
+            bool match = true;
+            for (int j = 0; j < nameWithNull.Length; j++)
+            {
+                if (_data[i + j] != nameWithNull[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
 
-        // Skip unknown (4 bytes)
-        pos += 4;
+            if (match)
+            {
+                Console.WriteLine($"[GameProgressParser] Found '{propertyName}' for update at offset {i}");
 
-        // Skip size field (4 bytes)
-        pos += 4;
+                int pos = i + nameWithNull.Length;
 
-        // Write new double value
-        byte[] valueBytes = BitConverter.GetBytes(value);
-        Array.Copy(valueBytes, 0, _data, pos, 8);
+                // Skip type length
+                if (pos + 4 > _data.Length) return false;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (typeLen < 0 || typeLen > 100 || pos + typeLen > _data.Length) return false;
+                pos += typeLen;
+
+                // Skip unknown (4 bytes)
+                if (pos + 4 > _data.Length) return false;
+                pos += 4;
+
+                // Skip size
+                if (pos + 4 > _data.Length) return false;
+                pos += 4;
+
+                // Skip array index (1 byte)
+                if (pos + 1 > _data.Length) return false;
+                pos += 1;
+
+                // Write new value
+                switch (propertyType)
+                {
+                    case GvasPropertyType.IntProperty:
+                        if (value is int intValue)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes(intValue);
+                            Array.Copy(valueBytes, 0, _data, pos, 4);
+                        }
+                        break;
+
+                    case GvasPropertyType.DoubleProperty:
+                        if (value is double doubleValue)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes(doubleValue);
+                            Array.Copy(valueBytes, 0, _data, pos, 8);
+                        }
+                        else if (value is int intVal)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes((double)intVal);
+                            Array.Copy(valueBytes, 0, _data, pos, 8);
+                        }
+                        break;
+
+                    case GvasPropertyType.ByteProperty:
+                        if (value is byte byteValue)
+                        {
+                            _data[pos] = byteValue;
+                        }
+                        else if (value is int iValue && iValue >= 0 && iValue <= 255)
+                        {
+                            _data[pos] = (byte)iValue;
+                        }
+                        break;
+                }
+
+                Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName}");
+                return true;
+            }
+        }
+
+        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found for update");
+        return false;
+    }
+
+    /// <summary>
+    /// Update a nested property within struct boundaries.
+    /// </summary>
+    private bool UpdateNestedProperty(int startPos, int endPos, string propertyName, GvasPropertyType propertyType, object value)
+    {
+        int pos = startPos;
+
+        while (pos < endPos - 10)
+        {
+            // Read nested property name
+            if (pos >= _data.Length || _data[pos] == 0)
+            {
+                pos++;
+                continue;
+            }
+
+            int nameStart = pos;
+            while (pos < endPos && _data[pos] != 0) pos++;
+            if (pos >= endPos) break;
+
+            var propNameBytes = new byte[pos - nameStart];
+            Array.Copy(_data, nameStart, propNameBytes, 0, propNameBytes.Length);
+            var propName = Encoding.UTF8.GetString(propNameBytes);
+            pos++; // Skip null
+
+            // Check if this is the property we're looking for
+            if (propName == propertyName || propName == propertyName + "_0")
+            {
+                Console.WriteLine($"[GameProgressParser] Found nested property '{propertyName}' for update");
+
+                // Skip type length
+                if (pos + 4 > endPos) return false;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                // Skip type name
+                if (pos + typeLen > endPos) return false;
+                pos += typeLen;
+
+                // Skip unknown (4 bytes)
+                if (pos + 4 > endPos) return false;
+                pos += 4;
+
+                // Skip size
+                if (pos + 4 > endPos) return false;
+                pos += 4;
+
+                // Skip array index (1 byte)
+                if (pos + 1 > endPos) return false;
+                pos += 1;
+
+                // Write new value
+                switch (propertyType)
+                {
+                    case GvasPropertyType.IntProperty:
+                        if (value is int intValue)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes(intValue);
+                            Array.Copy(valueBytes, 0, _data, pos, 4);
+                        }
+                        break;
+
+                    case GvasPropertyType.DoubleProperty:
+                        if (value is double doubleValue)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes(doubleValue);
+                            Array.Copy(valueBytes, 0, _data, pos, 8);
+                        }
+                        else if (value is int intVal)
+                        {
+                            byte[] valueBytes = BitConverter.GetBytes((double)intVal);
+                            Array.Copy(valueBytes, 0, _data, pos, 8);
+                        }
+                        break;
+
+                    case GvasPropertyType.ByteProperty:
+                        if (value is byte byteValue)
+                        {
+                            _data[pos] = byteValue;
+                        }
+                        else if (value is int iValue && iValue >= 0 && iValue <= 255)
+                        {
+                            _data[pos] = (byte)iValue;
+                        }
+                        break;
+                }
+
+                Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName} in struct");
+                return true;
+            }
+            else
+            {
+                // Skip this nested property
+                if (pos + 4 > endPos) break;
+                int typeLen = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (pos + typeLen > endPos) break;
+                pos += typeLen;
+
+                if (pos + 4 > endPos) break;
+                pos += 4;
+
+                if (pos + 4 > endPos) break;
+                int size = BitConverter.ToInt32(_data, pos);
+                pos += 4;
+
+                if (pos + 1 > endPos) break;
+                pos += 1; // Skip array index
+
+                if (size < 0 || pos + size > endPos) break;
+                pos += size; // Skip value
+            }
+        }
+
+        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found in struct for update");
+        return false;
     }
 
     private bool TryConvertToInt(double value, out int result)

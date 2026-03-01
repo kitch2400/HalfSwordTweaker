@@ -22,3 +22,7 @@ publish-output/
 # Project-specific
 AGENTS.md
 nul
+
+# Diagnostic files
+decoded.txt
+GvasDiagnostics/

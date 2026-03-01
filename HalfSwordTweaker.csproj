@@ -13,6 +13,13 @@
     <AssemblyVersion>0.5.0.0</AssemblyVersion>
     <FileVersion>0.5.0.0</FileVersion>
     <InformationalVersion>0.5</InformationalVersion>
-
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <DisableImplicitNamespaceImports>true</DisableImplicitNamespaceImports>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="GvasDiagnostics\**" />
+    <EmbeddedResource Remove="GvasDiagnostics\**" />
+    <None Remove="GvasDiagnostics\**" />
+  </ItemGroup>
 </Project>

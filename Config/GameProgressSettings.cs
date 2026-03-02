@@ -1,6 +1,25 @@
 namespace HalfSwordTweaker.Config;
 
 /// <summary>
+/// Represents an inventory item in the player's inventory.
+/// </summary>
+public class InventoryItem
+{
+    public string ItemName { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+    public string ObjectPath { get; set; } = string.Empty;
+    public Dictionary<string, object> Properties { get; set; } = new();
+    
+    public override string ToString()
+    {
+        if (!string.IsNullOrEmpty(ItemName))
+            return $"{ItemName} ({ItemType})";
+        return ItemType;
+    }
+}
+
+/// <summary>
 /// Property types supported by GameProgress.sav parser.
 /// </summary>
 public enum GvasPropertyType
@@ -10,7 +29,10 @@ public enum GvasPropertyType
     DoubleProperty,
     StrProperty,
     NameProperty,
-    ByteProperty
+    ByteProperty,
+    ArrayProperty,
+    StructProperty,
+    ObjectProperty
 }
 
 /// <summary>
@@ -277,6 +299,18 @@ public static class GameProgressSettingsRegistry
             PropertyType = GvasPropertyType.DoubleProperty,
             MinValue = 0,
             MaxValue = 1000,
+            DefaultValue = 0
+        },
+        
+        // Inventory
+        new GameProgressSetting
+        {
+            Name = "Items",
+            DisplayName = "Inventory Items",
+            Description = "Player inventory (ArrayProperty of StructProperty items)",
+            PropertyType = GvasPropertyType.ArrayProperty,
+            MinValue = 0,
+            MaxValue = 0,
             DefaultValue = 0
         }
     };

@@ -116,7 +116,10 @@ public class MainForm : Form
 
     private void InitializeComponent()
     {
-        Text = "HalfSwordTweaker v0.4 - By Kitch2400";
+        var isDevMode = DevConfig.IsDevMode();
+        Text = isDevMode 
+            ? "[DEV MODE] HalfSwordTweaker v0.4 - By Kitch2400" 
+            : "HalfSwordTweaker v0.4 - By Kitch2400";
         Size = new Size(605, 849);
         MinimumSize = new Size(605, 606);
         StartPosition = FormStartPosition.CenterScreen;
@@ -124,7 +127,25 @@ public class MainForm : Form
         _tabControl.Dock = DockStyle.Fill;
 
         var statusStrip = new StatusStrip();
-        _statusLabel.Text = "Ready";
+        _statusLabel = new ToolStripStatusLabel();
+        
+        if (isDevMode)
+        {
+            _statusLabel.Text = "DEV MODE ACTIVE - Changes will affect sample_saves, not live game saves";
+            _statusLabel.ForeColor = Color.White;
+            _statusLabel.BackColor = Color.DarkOrange;
+            _statusLabel.Spring = true;
+            _statusLabel.TextAlign = ContentAlignment.MiddleRight;
+        }
+        else
+        {
+            _statusLabel.Text = "Ready";
+            _statusLabel.ForeColor = Color.Black;
+            _statusLabel.BackColor = Color.Transparent;
+            _statusLabel.Spring = true;
+            _statusLabel.TextAlign = ContentAlignment.MiddleRight;
+        }
+        
         statusStrip.Items.Add(_statusLabel);
 
         var buttonPanel = new Panel
@@ -197,6 +218,7 @@ public class MainForm : Form
 
     private SaveGameTab? _saveEditorTab;
     private GameProgressTab? _gameProgressTab;
+    private InventoryTab? _inventoryTab;
 
     private void InitializeTabs()
     {
@@ -213,12 +235,16 @@ public class MainForm : Form
         }
 
         // Add Save Editor tab
-        _saveEditorTab = new SaveGameTab("User settings (Settings.sav)");
+        _saveEditorTab = new SaveGameTab("User Settings (Settings.sav)");
         _tabControl.TabPages.Add(_saveEditorTab);
 
         // Add Game Progress tab
         _gameProgressTab = new GameProgressTab();
         _tabControl.TabPages.Add(_gameProgressTab);
+
+        // Add Inventory tab
+        _inventoryTab = new InventoryTab();
+        _tabControl.TabPages.Add(_inventoryTab);
 
         WireUpScalabilityGroupChangeTracking();
         WireUpAADependentSettings();
@@ -494,6 +520,9 @@ public class MainForm : Form
             // Apply Game Progress settings
             _gameProgressTab?.ApplySettings();
 
+            // Apply Inventory settings
+            _inventoryTab?.ApplyChanges();
+
             if (_configManager.WriteAll())
             {
                 if (_hasScalabilityGroupChanges)
@@ -715,6 +744,7 @@ public class MainForm : Form
         {
             PopulateSettingsFromConfig();
             _saveEditorTab?.LoadSettings();
+            _inventoryTab?.LoadInventory();
             _statusLabel.Text = "Settings refreshed.";
             _hasScalabilityGroupChanges = false;
         }

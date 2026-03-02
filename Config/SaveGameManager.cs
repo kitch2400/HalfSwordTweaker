@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.Json;
 
 namespace HalfSwordTweaker.Config;
 
@@ -15,18 +16,22 @@ public class SaveGameManager
     /// </summary>
     public SaveGameManager()
     {
-        _saveGameDirectory = GetSaveGameDirectory();
-        _settingsSavePath = Path.Combine(_saveGameDirectory, "Settings.sav");
-    }
-
-    /// <summary>
-    /// Gets the path to the Half Sword save game directory.
-    /// </summary>
-    /// <returns>The path to the save game directory.</returns>
-    private static string GetSaveGameDirectory()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "HalfswordUE5", "Saved", "SaveGames");
+        var devConfig = DevConfig.Load();
+        
+        if (devConfig.DevelopmentMode)
+        {
+            var baseDir = AppContext.BaseDirectory;
+            _saveGameDirectory = Path.Combine(baseDir, devConfig.SavePath);
+            _settingsSavePath = Path.Combine(_saveGameDirectory, "Settings.sav");
+            Console.WriteLine($"[SaveGameManager] DEV MODE: {_saveGameDirectory}");
+        }
+        else
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            _saveGameDirectory = Path.Combine(localAppData, "HalfswordUE5", "Saved", "SaveGames");
+            _settingsSavePath = Path.Combine(_saveGameDirectory, "Settings.sav");
+            Console.WriteLine($"[SaveGameManager] Production mode: {_saveGameDirectory}");
+        }
     }
 
     /// <summary>

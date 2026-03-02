@@ -26,3 +26,10 @@ nul
 # Diagnostic files
 decoded.txt
 GvasDiagnostics/
+
+# Sample save files (for testing)
+sample_saves/
+
+# Development configuration (local overrides)
+dev.config.json
+diagnostics_output.txt

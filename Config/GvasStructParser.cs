@@ -21,7 +21,6 @@ public class GvasProperty
 public class GvasStructParser
 {
     private readonly byte[] _data;
-    private int _position;
     private readonly StringBuilder _logBuilder = new();
 
     public string Logs => _logBuilder.ToString();

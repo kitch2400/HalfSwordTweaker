@@ -170,11 +170,11 @@ public static class GameProgressSettingsRegistry
         {
             Name = "Player Character_0.Weight_23_65E4C6534D14653F96EB739F159E58CD",
             DisplayName = "Character Weight",
-            Description = "Character weight/muscle mass (0.50 - 2.50)",
+            Description = "Character weight (displayed in KG, stored as multiplier). Formula: KG = 60 + (multiplier + 0.0448) × 31.0465",
             PropertyType = GvasPropertyType.DoubleProperty,
-            MinValue = 0.50,
-            MaxValue = 2.50,
-            DefaultValue = 1.00,
+            MinValue = -0.0448,
+            MaxValue = 1.50,
+            DefaultValue = 0.7552,
             ParentStruct = "Player Character"
         },
         

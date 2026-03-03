@@ -19,14 +19,12 @@ public class GameProgressManager
             var baseDir = AppContext.BaseDirectory;
             _gameProgressPath = Path.Combine(baseDir, devConfig.SavePath, "GameProgress.sav");
             _backupPath = Path.Combine(baseDir, devConfig.BackupPath, "GameProgress.sav.bak");
-            Console.WriteLine($"[GameProgressManager] DEV MODE: {_gameProgressPath}");
         }
         else
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _gameProgressPath = Path.Combine(appData, "HalfswordUE5", "Saved", "SaveGames", "GameProgress.sav");
             _backupPath = Path.Combine(appData, "HalfSwordTweaker", "Backups", "GameProgress.sav.bak");
-            Console.WriteLine($"[GameProgressManager] Production mode: {_gameProgressPath}");
         }
     }
 
@@ -39,7 +37,6 @@ public class GameProgressManager
 
         if (!GameProgressExists())
         {
-            Console.WriteLine("[GameProgressManager] GameProgress.sav not found");
             return properties;
         }
 
@@ -50,12 +47,10 @@ public class GameProgressManager
             // Use working direct-search parser (struct parsing not yet implemented)
             var parser = new GameProgressParser(data);
             properties = parser.ParseProperties();
-            
-            Console.WriteLine($"[GameProgressManager] Parsed {properties.Count} properties");
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressManager] Error reading properties: {ex.Message}");
+            // Silently fail - file may not exist
         }
 
         return properties;
@@ -69,7 +64,6 @@ public class GameProgressManager
         {
             if (!GameProgressExists())
             {
-                Console.WriteLine("[GameProgressManager] GameProgress.sav not found");
                 return false;
             }
 
@@ -84,12 +78,10 @@ public class GameProgressManager
             }
 
             File.WriteAllBytes(_gameProgressPath, parser.GetData());
-            Console.WriteLine($"[GameProgressManager] Successfully wrote GameProgress.sav");
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressManager] Error writing properties: {ex.Message}");
             return false;
         }
     }
@@ -107,12 +99,11 @@ public class GameProgressManager
             if (File.Exists(_gameProgressPath))
             {
                 File.Copy(_gameProgressPath, _backupPath, true);
-                Console.WriteLine($"[GameProgressManager] Backup created at {_backupPath}");
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressManager] Error creating backup: {ex.Message}");
+            // Silently fail - backup not critical
         }
     }
 }
@@ -135,11 +126,9 @@ public class GameProgressParser
 
         try
         {
-            Console.WriteLine($"[GameProgressParser] Initialized parser with {_data.Length} bytes");
 
             if (!VerifyHeader())
             {
-                Console.WriteLine("[GameProgressParser] Invalid GVAS header");
                 return properties;
             }
 
@@ -152,23 +141,15 @@ public class GameProgressParser
                     if (value != null)
                     {
                         properties[setting.Name] = value;
-                        Console.WriteLine($"[GameProgressParser] Found {setting.Name} = {value}");
                     }
                     else
                     {
-                        Console.WriteLine($"[GameProgressParser] Property '{setting.Name}' not found");
                     }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[GameProgressParser] Error reading {setting.Name}: {ex.Message}");
-                }
+                catch { }
             }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[GameProgressParser] Error parsing properties: {ex.Message}");
-        }
+        catch { }
 
         return properties;
     }
@@ -177,12 +158,10 @@ public class GameProgressParser
     {
         try
         {
-            Console.WriteLine($"[GameProgressParser] Updating {propertyName} to {value}");
 
             var setting = GameProgressSettingsRegistry.Settings.FirstOrDefault(s => s.Name == propertyName);
             if (setting == null)
             {
-                Console.WriteLine($"[GameProgressParser] No definition found for '{propertyName}'");
                 return false;
             }
 
@@ -196,19 +175,13 @@ public class GameProgressParser
             int propertyStart = FindPropertyOffset(propertyName);
             if (propertyStart < 0)
             {
-                Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found");
                 return false;
             }
 
             UpdatePropertyValue(propertyStart, setting.PropertyType, value);
-            Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName}");
             return true;
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[GameProgressParser] Error updating property: {ex.Message}");
-            return false;
-        }
+        catch { return false; }
     }
 
     public byte[] GetData() => (byte[])_data.Clone();
@@ -217,17 +190,13 @@ public class GameProgressParser
     {
         if (_data.Length < 48)
         {
-            Console.WriteLine("[GameProgressParser] File too short");
             return false;
         }
 
         if (_data[0] != 0x47 || _data[1] != 0x56 || _data[2] != 0x41 || _data[3] != 0x53)
         {
-            Console.WriteLine("[GameProgressParser] Invalid GVAS magic");
             return false;
         }
-
-        Console.WriteLine("[GameProgressParser] GVAS header verified");
         return true;
     }
 
@@ -262,37 +231,129 @@ public class GameProgressParser
     {
         try
         {
-            // For Player Character struct, search directly for the nested property name
-            // since the struct parsing is complex and error-prone
+            // For Player Character struct, search within the struct boundaries
             if (structName == "Player Character")
             {
-                // Extract just the property name part after the dot (e.g., "Height_21_..." from "Player Character_0.Height_21_...")
-                int dotIndex = propertyName.IndexOf('.');
-                string actualPropertyName = dotIndex > 0 ? propertyName.Substring(dotIndex + 1) : propertyName;
-                return FindNestedPropertyDirectly(actualPropertyName, propertyType);
-            }
+                // Find the Player Character_0 StructProperty
+                int structOffset = FindPlayerCharacterStructOffset();
+                if (structOffset < 0)
+                {
+                    // Fallback to global search if struct not found
+                    int dotIndex = propertyName.IndexOf('.');
+                    string actualPropertyName = dotIndex > 0 ? propertyName.Substring(dotIndex + 1) : propertyName;
+                    return FindNestedPropertyDirectly(actualPropertyName, propertyType);
+                }
 
-            Console.WriteLine($"[GameProgressParser] Struct '{structName}' not supported for nested properties yet");
+                // Parse struct to find its end boundary
+                int structEnd = ParseStructPropertyBoundary(structOffset);
+
+                // Extract just the property name part after the dot
+                int dotIndex2 = propertyName.IndexOf('.');
+                string actualPropertyName2 = dotIndex2 > 0 ? propertyName.Substring(dotIndex2 + 1) : propertyName;
+                
+                // Search within struct boundaries
+                return FindNestedPropertyDirectly(actualPropertyName2, propertyType, structOffset, structEnd);
+            }
             return null;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressParser] Error reading from struct '{structName}': {ex.Message}");
             return null;
         }
     }
 
     /// <summary>
-    /// Search for a nested property by name directly in the file.
+    /// Find the Player Character_0 StructProperty offset.
+    /// </summary>
+    private int FindPlayerCharacterStructOffset()
+    {
+        
+        // Search for "Player Character" property name (without _0 suffix for flexibility)
+        var searchName = Encoding.UTF8.GetBytes("Player Character");
+        for (int i = 0; i <= _data.Length - searchName.Length; i++)
+        {
+            bool match = true;
+            for (int j = 0; j < searchName.Length; j++)
+            {
+                if (_data[i + j] != searchName[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                // Go backwards to find the start of the StructProperty
+                int pos = i;
+                while (pos > 0 && _data[pos] != 0 && _data[pos - 1] != 0) pos--;
+                while (pos > 0 && _data[pos - 1] != 0) pos--;
+                return pos;
+            }
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Parse struct property header and return the end offset of the struct.
+    /// </summary>
+    private int ParseStructPropertyBoundary(int structOffset)
+    {
+        int pos = structOffset;
+
+        // Skip property name
+        while (pos < _data.Length && _data[pos] != 0) pos++;
+        pos++; // Skip null
+
+        // Read type length
+        if (pos + 4 > _data.Length) return structOffset + 1000;
+        int typeLen = BitConverter.ToInt32(_data, pos);
+        pos += 4 + typeLen;
+
+        // Skip unknown (4 bytes)
+        pos += 4;
+
+        // Read struct type string length
+        if (pos + 4 > _data.Length) return structOffset + 1000;
+        int structTypeLen = BitConverter.ToInt32(_data, pos);
+        pos += 4 + structTypeLen;
+
+        // Read array index (4 bytes)
+        if (pos + 4 > _data.Length) return structOffset + 1000;
+        pos += 4;
+
+        // Read struct size (4 bytes)
+        if (pos + 4 > _data.Length) return structOffset + 1000;
+        int structSize = BitConverter.ToInt32(_data, pos);
+        pos += 4;
+
+        // Struct content starts after header
+        // Add a safety margin for nested structures
+        int structEnd = pos + structSize + 500; // 500 byte safety margin
+        if (structEnd > _data.Length) structEnd = _data.Length;
+
+        return structEnd;
+    }
+
+    /// <summary>
+    /// Search for a nested property by name directly in the file (global search).
     /// </summary>
     private object? FindNestedPropertyDirectly(string propertyName, GvasPropertyType propertyType)
+    {
+        return FindNestedPropertyDirectly(propertyName, propertyType, 0, _data.Length);
+    }
+
+    /// <summary>
+    /// Search for a nested property by name directly in the file within a range.
+    /// </summary>
+    private object? FindNestedPropertyDirectly(string propertyName, GvasPropertyType propertyType, int startPos, int endPos)
     {
         var nameBytes = Encoding.UTF8.GetBytes(propertyName);
         var nameWithNull = new byte[nameBytes.Length + 1];
         Array.Copy(nameBytes, nameWithNull, nameBytes.Length);
 
-        // Search for the property name (it should be unique in the file)
-        for (int i = 0; i <= _data.Length - nameWithNull.Length; i++)
+        // Search for the property name within the specified range
+        for (int i = startPos; i <= endPos - nameWithNull.Length; i++)
         {
             bool match = true;
             for (int j = 0; j < nameWithNull.Length; j++)
@@ -306,38 +367,45 @@ public class GameProgressParser
 
             if (match)
             {
-                Console.WriteLine($"[GameProgressParser] Found '{propertyName}' at offset {i}");
+
+                // Calculate ACTUAL property name length by finding null terminator
+                int actualNameLen = 0;
+                int namePos = i;
+                while (namePos < endPos && _data[namePos] != 0)
+                {
+                    actualNameLen++;
+                    namePos++;
+                }
+                actualNameLen++; // Include null terminator
 
                 // Parse property header to get value
-                int pos = i + nameWithNull.Length;
+                int pos = i + actualNameLen;
 
                 // Read type length
-                if (pos + 4 > _data.Length) return null;
+                if (pos + 4 > endPos) return null;
                 int typeLen = BitConverter.ToInt32(_data, pos);
                 pos += 4;
 
-                if (typeLen < 0 || typeLen > 100 || pos + typeLen > _data.Length) return null;
+                if (typeLen < 0 || typeLen > 100 || pos + typeLen > endPos) return null;
                 pos += typeLen; // Skip type name
 
                 // Skip unknown (4 bytes for nested properties)
-                if (pos + 4 > _data.Length) return null;
+                if (pos + 4 > endPos) return null;
                 pos += 4;
 
                 // Read size
-                if (pos + 4 > _data.Length) return null;
+                if (pos + 4 > endPos) return null;
                 int size = BitConverter.ToInt32(_data, pos);
                 pos += 4;
 
                 // Skip array index (1 byte)
-                if (pos + 1 > _data.Length) return null;
+                if (pos + 1 > endPos) return null;
                 pos += 1;
 
                 // Read value
-                return ReadValueAtPosition(pos, size, propertyType, _data.Length);
+                return ReadValueAtPosition(pos, size, propertyType, endPos);
             }
         }
-
-        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found");
         return null;
     }
 
@@ -369,7 +437,6 @@ public class GameProgressParser
             // Check if this is the property we're looking for
             if (propName == propertyName || propName == propertyName + "_0")
             {
-                Console.WriteLine($"[GameProgressParser] Found nested property '{propertyName}' at offset {pos - propName.Length - 1}");
 
                 // Read type length
                 if (pos + 4 > endPos) return null;
@@ -419,8 +486,6 @@ public class GameProgressParser
                 pos += size; // Skip value
             }
         }
-
-        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found in struct");
         return null;
     }
 
@@ -432,8 +497,6 @@ public class GameProgressParser
     {
         try
         {
-            Console.WriteLine($"[GameProgressParser] Parsing inventory array: {propertyName}");
-            
             // For "Items" property, we need to find the "Player Inventory" StructProperty
             // There are multiple inventories in the save file:
             // - Player Inventory (at 0x00008842) - THIS IS WHAT WE WANT
@@ -442,19 +505,14 @@ public class GameProgressParser
             int inventoryOffset = FindPlayerInventoryOffset();
             if (inventoryOffset < 0)
             {
-                Console.WriteLine($"[GameProgressParser] Player Inventory StructProperty not found");
                 return new List<InventoryItem>();
             }
-            
-            Console.WriteLine($"[GameProgressParser] Found PLAYER Inventory StructProperty at 0x{inventoryOffset:X8}");
             
             // Parse the Inventory StructProperty to find the ArmorPassports ArrayProperty
             return ParseInventoryFromStruct(inventoryOffset);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressParser] Error parsing inventory: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
             return null;
         }
     }
@@ -464,8 +522,6 @@ public class GameProgressParser
     /// </summary>
     private List<InventoryItem> ParseInventoryFromStruct(int inventoryOffset)
     {
-        Console.WriteLine($"[GameProgressParser] === Starting Inventory Parsing ===");
-        Console.WriteLine($"[GameProgressParser] Inventory StructProperty at offset 0x{inventoryOffset:X8}");
         
         int pos = inventoryOffset;
         
@@ -473,89 +529,69 @@ public class GameProgressParser
         int propNameStart = pos;
         while (pos < _data.Length && _data[pos] != 0) pos++;
         var propName = Encoding.UTF8.GetString(_data, propNameStart, pos - propNameStart);
-        Console.WriteLine($"[GameProgressParser] Property name: '{propName}'");
         pos++; // Skip null
         
         // Read type length
         int typeLen = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Type length: {typeLen}");
         pos += 4;
         
         // Read type name (should be "StructProperty")
         var typeName = Encoding.UTF8.GetString(_data, pos, typeLen);
-        Console.WriteLine($"[GameProgressParser] Type name: '{typeName}'");
         pos += typeLen;
         
         // Skip unknown (4 bytes)
-        Console.WriteLine($"[GameProgressParser] Skipping 4 unknown bytes at 0x{pos:X8}");
         pos += 4;
         
         // Read struct type string length (4 bytes)
         int structTypeLen = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Struct type string length: {structTypeLen}");
         pos += 4;
         
         // Read struct type string
         var structType = Encoding.UTF8.GetString(_data, pos, structTypeLen);
-        Console.WriteLine($"[GameProgressParser] Struct type string: '{structType}'");
         pos += structTypeLen;
         
         // Read array index (4 bytes)
         int arrayIndex = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Array index: {arrayIndex}");
         pos += 4;
         
         // Read struct size (4 bytes)
         int structSize = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Struct size field: {structSize}");
         pos += 4;
         
         // Now we're at the struct content
-        Console.WriteLine($"[GameProgressParser] Struct content starts at 0x{pos:X8}");
-        Console.WriteLine($"[GameProgressParser] === Hex dump of first 100 bytes of struct content ===");
         DumpHex(pos, Math.Min(100, _data.Length - pos));
         
         // The struct content has this structure:
         // 2 null bytes + inner size (4 bytes) + struct type string (null-terminated) + null bytes + GUID length (4 bytes) + GUID string + null bytes + ArrayProperty
         
         // Skip 2 null bytes
-        Console.WriteLine($"[GameProgressParser] Skipping 2 null bytes...");
         pos += 2;
         
         // Read inner size
         int innerSize = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Inner size: {innerSize}");
         pos += 4;
         
         // Read struct type string (null-terminated)
         int innerTypeStart = pos;
         while (pos < _data.Length && _data[pos] != 0) pos++;
         var innerType = Encoding.UTF8.GetString(_data, innerTypeStart, pos - innerTypeStart);
-        Console.WriteLine($"[GameProgressParser] Inner struct type: '{innerType}'");
         pos++; // Skip null
         
         // Skip null bytes
         int nullCount = 0;
         while (pos < _data.Length && _data[pos] == 0) { pos++; nullCount++; }
-        Console.WriteLine($"[GameProgressParser] Skipped {nullCount} null bytes");
         
         // Read GUID length
         int guidLen = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] GUID length: {guidLen}");
         pos += 4;
         
         // Read GUID string
         var guid = Encoding.UTF8.GetString(_data, pos, guidLen);
-        Console.WriteLine($"[GameProgressParser] GUID: '{guid}'");
         pos += guidLen;
         
         // Skip null bytes after GUID
         nullCount = 0;
         while (pos < _data.Length && _data[pos] == 0) { pos++; nullCount++; }
-        Console.WriteLine($"[GameProgressParser] Skipped {nullCount} null bytes after GUID");
-        
-        Console.WriteLine($"[GameProgressParser] Now at offset 0x{pos:X8}, searching for ArrayProperty...");
-        Console.WriteLine($"[GameProgressParser] === Hex dump of bytes at current position ===");
         DumpHex(pos, 50);
         
         // Now search for ArrayProperty
@@ -563,11 +599,8 @@ public class GameProgressParser
         
         if (arrayPropertyOffset < 0)
         {
-            Console.WriteLine($"[GameProgressParser] ERROR: Could not find ArrayProperty in Inventory struct");
             return new List<InventoryItem>();
         }
-        
-        Console.WriteLine($"[GameProgressParser] Found ArrayProperty at offset 0x{arrayPropertyOffset:X8}");
         
         // Parse the ArrayProperty
         return ParseArrayProperty(arrayPropertyOffset);
@@ -590,8 +623,6 @@ public class GameProgressParser
                 hex.Append(_data[i + j].ToString("X2") + " ");
                 ascii.Append(_data[i + j] >= 32 && _data[i + j] < 127 ? (char)_data[i + j] : '.');
             }
-            
-            Console.WriteLine($"[GameProgressParser] 0x{i:X8}  {hex,-48}  {ascii}");
         }
     }
     
@@ -604,11 +635,8 @@ public class GameProgressParser
         
         if (arrayPropBytesPos < 0)
         {
-            Console.WriteLine($"[GameProgressParser] 'ArrayProperty' string not found between 0x{startPos:X8} and 0x{endPos:X8}");
             return -1;
         }
-        
-        Console.WriteLine($"[GameProgressParser] Found 'ArrayProperty' string at 0x{arrayPropBytesPos:X8}");
         
         // The ArrayProperty starts with its property name, then type length, then "ArrayProperty" type
         // So we need to go backwards to find the property name
@@ -620,7 +648,6 @@ public class GameProgressParser
         if (nameStart < startPos) nameStart = startPos;
         
         var arrayName = Encoding.UTF8.GetString(_data, nameStart, nameEnd - nameStart);
-        Console.WriteLine($"[GameProgressParser] ArrayProperty name: '{arrayName}'");
         
         return nameStart; // Return start of property name
     }
@@ -637,66 +664,52 @@ public class GameProgressParser
         int nameStart = pos;
         while (pos < _data.Length && _data[pos] != 0) pos++;
         var propName = Encoding.UTF8.GetString(_data, nameStart, pos - nameStart);
-        Console.WriteLine($"[GameProgressParser] ArrayProperty name: '{propName}'");
         pos++; // Skip null
         
         // Read type length
         int typeLen = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Type length: {typeLen}");
         pos += 4;
         
         // Read type name (should be "ArrayProperty")
         var typeName = Encoding.UTF8.GetString(_data, pos, typeLen);
-        Console.WriteLine($"[GameProgressParser] Type name: '{typeName}'");
         pos += typeLen;
         
         // Skip unknown (4 bytes)
         int unknown = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Unknown: 0x{unknown:X8}");
         pos += 4;
         
         // Read array size
         int arraySize = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Array size: {arraySize} elements");
         pos += 4;
         
         // Read array index
         int arrayIndex = BitConverter.ToInt32(_data, pos);
-        Console.WriteLine($"[GameProgressParser] Array index: {arrayIndex}");
         pos += 4;
         
-        Console.WriteLine($"[GameProgressParser] Array elements start at 0x{pos:X8}");
-        
         // DUMP STRUCTURAL INFORMATION - Find all property boundaries
-        Console.WriteLine($"[GameProgressParser] === DUMPING STRUCTURAL BOUNDARIES ===");
         DumpStructuralBoundaries(pos, Math.Min(pos + 50 * 1024, _data.Length));
         
         // Search for specific Baron items to verify inventory source
-        Console.WriteLine($"[GameProgressParser] === SEARCHING FOR BARON ITEMS IN INVENTORY RANGE ===");
         SearchForItem("Baron Cuisses", pos, Math.Min(pos + 350 * 1024, _data.Length));
         SearchForItem("Baron Cuirass", pos, Math.Min(pos + 350 * 1024, _data.Length));
         SearchForItem("Tabard", pos, Math.Min(pos + 350 * 1024, _data.Length));
         
         // ALSO search entire file to see if items exist anywhere
-        Console.WriteLine($"[GameProgressParser] === SEARCHING ENTIRE FILE FOR BARON ITEMS ===");
         SearchForItem("Baron Cuisses", 0, _data.Length);
         SearchForItem("Baron Cuirass", 0, _data.Length);
         SearchForItem("Tabard", 0, _data.Length);
         
         // Search for other unique item names to map the save structure
-        Console.WriteLine($"[GameProgressParser] === SEARCHING FOR OTHER UNIQUE ITEMS ===");
         SearchForItem("BP_Armor", 0, _data.Length);
         SearchForItem("Modular_Core", 0, _data.Length);
         
         // Find ALL ArrayProperty instances to locate different inventories
-        Console.WriteLine($"[GameProgressParser] === FINDING ALL ARRAYPROPERTIES IN FILE ===");
         FindAllArrayProperties();
         
         // Dynamic range approach: search up to 350KB for blueprint paths
         // This covers ~109 items in current save with room for growth
         // Maximum 350KB limit documented in AGENTS.md
         int arrayEnd = Math.Min(pos + 350 * 1024, _data.Length);
-        Console.WriteLine($"[GameProgressParser] Searching for blueprint paths from 0x{pos:X8} to 0x{arrayEnd:X8} (max 350KB)");
         
         var items = new List<InventoryItem>();
         int searchPos = pos;
@@ -716,7 +729,6 @@ public class GameProgressParser
                 int markerPos = FindStructuralMarker(blueprintPos, blueprintPos + 2048);
                 if (markerPos >= 0)
                 {
-                    Console.WriteLine($"[GameProgressParser] Structural marker detected at 0x{markerPos:X8}, stopping inventory search");
                     break;
                 }
             }
@@ -728,7 +740,6 @@ public class GameProgressParser
             while (pathEnd < arrayEnd && _data[pathEnd] != 0 && _data[pathEnd] != 0x0A && _data[pathEnd] != 0x0D) pathEnd++;
             
             var blueprintPath = Encoding.UTF8.GetString(_data, blueprintPos, pathEnd - blueprintPos);
-            Console.WriteLine($"[GameProgressParser] Found blueprint path: '{blueprintPath}'");
             
             // Create inventory item
             var item = new InventoryItem();
@@ -762,10 +773,7 @@ public class GameProgressParser
         // Check if we hit the maximum search range
         if (searchPos >= arrayEnd - 12)
         {
-            Console.WriteLine($"[GameProgressParser] WARNING: Hit 500KB search limit! Inventory may contain more items.");
         }
-        
-        Console.WriteLine($"[GameProgressParser] === Parsed {items.Count} inventory items ===");
         return items;
     }
     
@@ -824,7 +832,6 @@ public class GameProgressParser
             // Log significant properties
             if (typeName.Contains("Struct") || typeName.Contains("Array") || size > 1000)
             {
-                Console.WriteLine($"[GameProgressParser] 0x{nameStart:X8}: '{propName}' ({typeName}) size={size}");
                 propCount++;
             }
             
@@ -869,7 +876,6 @@ public class GameProgressParser
                 if (nameStart >= 0 && nameEnd < _data.Length)
                 {
                     var propName = Encoding.UTF8.GetString(_data, nameStart, nameEnd - nameStart);
-                    Console.WriteLine($"[GameProgressParser] ArrayProperty '{propName}' at offset 0x{i:X8}");
                 }
                 
                 // Skip to avoid duplicate matches
@@ -898,18 +904,14 @@ public class GameProgressParser
             
             if (match)
             {
-                Console.WriteLine($"[GameProgressParser] FOUND '{itemName}' at offset 0x{i:X8}");
                 
                 // Extract context - show surrounding text
                 int contextStart = Math.Max(i - 50, startPos);
                 int contextEnd = Math.Min(i + searchBytes.Length + 50, endPos);
                 var context = Encoding.UTF8.GetString(_data, contextStart, contextEnd - contextStart);
-                Console.WriteLine($"[GameProgressParser] Context: ...{context}...");
                 return;
             }
         }
-        
-        Console.WriteLine($"[GameProgressParser] '{itemName}' NOT found in range 0x{startPos:X8} - 0x{endPos:X8}");
     }
     
     /// <summary>
@@ -934,7 +936,6 @@ public class GameProgressParser
             int pos = FindBytes(_data, Encoding.UTF8.GetBytes(marker), startPos, endPos);
             if (pos >= 0)
             {
-                Console.WriteLine($"[GameProgressParser] Found '{marker}' at 0x{pos:X8}");
                 return pos;
             }
         }
@@ -994,8 +995,6 @@ public class GameProgressParser
         int nameLen = pos - nameStart;
         pos++; // Skip null
 
-        Console.WriteLine($"[GameProgressParser] StructProperty name: {Encoding.UTF8.GetString(_data, nameStart, nameLen)}");
-
         // Read type length (4 bytes)
         if (pos + 4 > _data.Length) return pos;
         int typeLen = BitConverter.ToInt32(_data, pos);
@@ -1005,7 +1004,6 @@ public class GameProgressParser
         if (pos + typeLen > _data.Length) return pos;
         var typeName = Encoding.UTF8.GetString(_data, pos, typeLen);
         pos += typeLen;
-        Console.WriteLine($"[GameProgressParser] StructProperty type: {typeName.TrimEnd('\0')}");
 
         // Skip 4 unknown bytes
         if (pos + 4 > _data.Length) return pos;
@@ -1019,7 +1017,6 @@ public class GameProgressParser
         // Sanity check
         if (structTypeLen < 0 || structTypeLen > 200)
         {
-            Console.WriteLine($"[GameProgressParser] ERROR: Invalid struct type length: {structTypeLen}");
             return pos;
         }
         
@@ -1027,19 +1024,16 @@ public class GameProgressParser
         if (pos + structTypeLen > _data.Length) return pos;
         var structType = Encoding.UTF8.GetString(_data, pos, structTypeLen);
         pos += structTypeLen;
-        Console.WriteLine($"[GameProgressParser] Struct type string: {structType.TrimEnd('\0')}");
 
         // Read array index (4 bytes)
         if (pos + 4 > _data.Length) return pos;
         int arrayIndex = BitConverter.ToInt32(_data, pos);
         pos += 4;
-        Console.WriteLine($"[GameProgressParser] Array index: {arrayIndex}");
 
         // Read struct size (4 bytes) - but this might not be the full size
         if (pos + 4 > _data.Length) return pos;
         int structSize = BitConverter.ToInt32(_data, pos);
         pos += 4;
-        Console.WriteLine($"[GameProgressParser] Struct size field: {structSize}");
         
         // The struct content starts with: 2 null bytes + size + struct type string + null bytes + GUID length + GUID
         // We need to skip past this to get to the actual nested properties
@@ -1053,14 +1047,12 @@ public class GameProgressParser
         if (pos + 4 > _data.Length) return pos;
         int innerSize = BitConverter.ToInt32(_data, pos);
         pos += 4;
-        Console.WriteLine($"[GameProgressParser] Inner size: {innerSize}");
         
         // Read struct type string (null-terminated)
         int structTypeStart = pos;
         while (pos < _data.Length && _data[pos] != 0) pos++;
         var innerStructType = Encoding.UTF8.GetString(_data, structTypeStart, pos - structTypeStart);
         pos++; // Skip null
-        Console.WriteLine($"[GameProgressParser] Inner struct type: {innerStructType}");
         
         // Skip some null bytes (variable amount)
         while (pos < _data.Length && _data[pos] == 0) pos++;
@@ -1077,11 +1069,7 @@ public class GameProgressParser
         // Skip more null bytes
         while (pos < _data.Length && _data[pos] == 0) pos++;
         
-        Console.WriteLine($"[GameProgressParser] Now at offset 0x{pos:X8}, searching for ArrayProperty");
-        Console.WriteLine($"[GameProgressParser] Struct size field: {structSize}, searching up to 200KB from here");
-        
         // Dump hex of first 100 bytes after GUID to see what we're looking at
-        Console.WriteLine("[GameProgressParser] Hex dump of struct content (first 100 bytes):");
         int dumpEnd = Math.Min(pos + 100, _data.Length);
         StringBuilder hexDump = new StringBuilder();
         for (int i = pos; i < dumpEnd; i++)
@@ -1089,13 +1077,11 @@ public class GameProgressParser
             hexDump.Append(_data[i].ToString("X2") + " ");
             if ((i - pos + 1) % 16 == 0)
             {
-                Console.WriteLine($"[GameProgressParser]   {hexDump.ToString()}");
                 hexDump.Clear();
             }
         }
         if (hexDump.Length > 0)
         {
-            Console.WriteLine($"[GameProgressParser]   {hexDump.ToString()}");
         }
         
         // Now search for ArrayProperty - search up to 200KB to be safe
@@ -1112,8 +1098,6 @@ public class GameProgressParser
     {
         int pos = startPos;
         int searchCount = 0;
-        
-        Console.WriteLine($"[GameProgressParser] Starting search at 0x{startPos:X8}, ending at 0x{endPos:X8}");
         
         while (pos < endPos - 50 && searchCount < 500)
         {
@@ -1134,7 +1118,6 @@ public class GameProgressParser
 
             if (typeLen < 1 || typeLen > 50 || pos + typeLen > endPos)
             {
-                Console.WriteLine($"[GameProgressParser] Invalid type length {typeLen} at property '{propName}', aborting search");
                 break;
             }
             
@@ -1144,13 +1127,11 @@ public class GameProgressParser
             // Log ALL properties for first 30 searches, then only ArrayProperty and StructProperty
             if (searchCount <= 30 || typeName.Contains("Array") || typeName.Contains("Struct"))
             {
-                Console.WriteLine($"[GameProgressParser] Property #{searchCount}: '{propName}' (Type: '{typeName}') at offset 0x{nameStart:X8}");
             }
 
             // Check if this is an ArrayProperty
             if (typeName == "ArrayProperty")
             {
-                Console.WriteLine($"[GameProgressParser] >>> FOUND ArrayProperty: {propName} at offset 0x{nameStart:X8}");
                 return nameStart;
             }
 
@@ -1166,7 +1147,6 @@ public class GameProgressParser
             // Sanity check on size
             if (size < 0 || size > 1000000)
             {
-                Console.WriteLine($"[GameProgressParser] Invalid size {size} for property '{propName}', stopping search");
                 break;
             }
 
@@ -1181,13 +1161,9 @@ public class GameProgressParser
             }
             else
             {
-                Console.WriteLine($"[GameProgressParser] Size {size} exceeds remaining data for '{propName}', stopping");
                 break;
             }
         }
-
-        Console.WriteLine($"[GameProgressParser] Searched {searchCount} properties, did not find ArrayProperty");
-        Console.WriteLine($"[GameProgressParser] Final position: 0x{pos:X8}");
         return -1;
     }
 
@@ -1217,13 +1193,9 @@ public class GameProgressParser
                 
                 // Find the property name start
                 while (pos > 0 && _data[pos - 1] != 0) pos--;
-                
-                Console.WriteLine($"[GameProgressParser] Found 'Player Inventory' marker at 0x{i:X8}, property starts at 0x{pos:X8}");
                 return pos;
             }
         }
-        
-        Console.WriteLine($"[GameProgressParser] 'Player Inventory' not found");
         return -1;
     }
     
@@ -1285,13 +1257,10 @@ public class GameProgressParser
 
             // Note: Nested property parsing not yet implemented for this path
             // The new ParseInventoryElement method handles this differently
-
-            Console.WriteLine($"[GameProgressParser] Item: {item.ItemName} -> {item.ObjectPath}");
             return item;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressParser] Error parsing inventory item: {ex.Message}");
             return null;
         }
     }
@@ -1342,13 +1311,10 @@ public class GameProgressParser
             // Store object path if present
             item.Properties["_offset"] = nameStart;
 
-            Console.WriteLine($"[GameProgressParser] Parsed item: {item.ItemName} ({item.ItemType}) at offset 0x{nameStart:X8}");
-
             return item;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressParser] Error parsing struct: {ex.Message}");
             return null;
         }
     }
@@ -1361,7 +1327,6 @@ public class GameProgressParser
         int offset = FindPropertyOffset(propertyName);
         if (offset < 0)
         {
-            Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found (tried with _0 suffix)");
             return null;
         }
 
@@ -1441,9 +1406,8 @@ public class GameProgressParser
 
             return ReadValueAtPosition(pos, size, propertyType, _data.Length);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[GameProgressParser] Error reading value: {ex.Message}");
             return null;
         }
     }
@@ -1568,8 +1532,6 @@ public class GameProgressParser
         {
             return UpdateNestedPropertyDirectly(propertyName, propertyType, value);
         }
-
-        Console.WriteLine($"[GameProgressParser] Struct '{structName}' update not supported yet");
         return false;
     }
 
@@ -1597,7 +1559,6 @@ public class GameProgressParser
 
             if (match)
             {
-                Console.WriteLine($"[GameProgressParser] Found '{propertyName}' for update at offset {i}");
 
                 int pos = i + nameWithNull.Length;
 
@@ -1656,13 +1617,9 @@ public class GameProgressParser
                         }
                         break;
                 }
-
-                Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName}");
                 return true;
             }
         }
-
-        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found for update");
         return false;
     }
 
@@ -1694,7 +1651,6 @@ public class GameProgressParser
             // Check if this is the property we're looking for
             if (propName == propertyName || propName == propertyName + "_0")
             {
-                Console.WriteLine($"[GameProgressParser] Found nested property '{propertyName}' for update");
 
                 // Skip type length
                 if (pos + 4 > endPos) return false;
@@ -1752,8 +1708,6 @@ public class GameProgressParser
                         }
                         break;
                 }
-
-                Console.WriteLine($"[GameProgressParser] Successfully updated {propertyName} in struct");
                 return true;
             }
             else
@@ -1780,8 +1734,6 @@ public class GameProgressParser
                 pos += size; // Skip value
             }
         }
-
-        Console.WriteLine($"[GameProgressParser] Property '{propertyName}' not found in struct for update");
         return false;
     }
 
@@ -1793,7 +1745,6 @@ public class GameProgressParser
         var offset = FindPropertyOffset("Items");
         if (offset < 0)
         {
-            Console.WriteLine("[GameProgressParser] Inventory not found");
             return null;
         }
 
@@ -1808,7 +1759,6 @@ public class GameProgressParser
         var offset = FindPlayerInventoryOffset();
         if (offset < 0)
         {
-            Console.WriteLine("[GameProgressParser] Player Inventory not found");
             return null;
         }
         return ParseInventoryFromStruct(offset);
@@ -1822,7 +1772,6 @@ public class GameProgressParser
         var offset = FindInsuredItemsOffset();
         if (offset < 0)
         {
-            Console.WriteLine("[GameProgressParser] Insured Items not found");
             return null;
         }
         return ParseInventoryFromStruct(offset);
@@ -1852,13 +1801,9 @@ public class GameProgressParser
                 int pos = i;
                 while (pos > 0 && _data[pos] != 0 && _data[pos - 1] != 0) pos--;
                 while (pos > 0 && _data[pos - 1] != 0) pos--;
-                
-                Console.WriteLine($"[GameProgressParser] Found 'Insured Items' marker at 0x{i:X8}, property starts at 0x{pos:X8}");
                 return pos;
             }
         }
-        
-        Console.WriteLine($"[GameProgressParser] 'Insured Items' not found");
         return -1;
     }
 
@@ -1869,8 +1814,6 @@ public class GameProgressParser
     /// </summary>
     public bool UpdateInventory(List<InventoryItem> items)
     {
-        Console.WriteLine("[GameProgressParser] Inventory update not fully implemented yet");
-        Console.WriteLine($"[GameProgressParser] Would update {items.Count} items");
         // TODO: Implement full inventory serialization
         return false;
     }

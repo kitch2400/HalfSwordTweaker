@@ -170,6 +170,8 @@ public class SaveGameTab : TabPage
     private readonly Dictionary<string, SaveGameSettingControl> _settingControls = new();
     private readonly BloodGorePresetControl? _presetControl;
     private readonly FlowLayoutPanel _flowLayoutPanel = new();
+    private bool _hasChanges = false;
+    private readonly string _baseTabText;
 
     // Blood/Gore presets with their values
     private static readonly Dictionary<string, (decimal Blood, decimal Gore)> Presets = new()
@@ -185,12 +187,18 @@ public class SaveGameTab : TabPage
     public string CategoryName { get; }
 
     /// <summary>
+    /// Gets a value indicating whether there are unsaved changes.
+    /// </summary>
+    public bool HasChanges => _hasChanges;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="SaveGameTab"/> class.
     /// </summary>
     /// <param name="categoryName">The name of the category.</param>
     public SaveGameTab(string categoryName) : base(categoryName)
     {
         CategoryName = categoryName;
+        _baseTabText = categoryName;
         _saveGameManager = new SaveGameManager();
         _presetControl = new BloodGorePresetControl();
         
@@ -268,25 +276,11 @@ public class SaveGameTab : TabPage
             (decimal)setting.MaxValue,
             (decimal)setting.DefaultValue);
         
-        // Wire up value changed handler for Blood and Gore to detect custom values
-        if (setting.Name == "Blood Rate" || setting.Name == "Gore Rate")
-        {
-            settingControl.ValueChanged += (s, e) => HandleBloodGoreValueChanged();
-        }
+        // Wire up value changed handler for ALL settings to track changes
+        settingControl.ValueChanged += (s, e) => _hasChanges = true;
         
         _flowLayoutPanel.Controls.Add(settingControl);
         _settingControls[setting.Name] = settingControl;
-    }
-
-    /// <summary>
-    /// Handles value changes in Blood or Gore settings.
-    /// </summary>
-    private void HandleBloodGoreValueChanged()
-    {
-        if (_presetControl == null) return;
-        
-        // Check if current values match any preset
-        DetectAndSetPreset();
     }
 
     /// <summary>
@@ -318,6 +312,9 @@ public class SaveGameTab : TabPage
 
         // Detect and set the appropriate preset
         DetectAndSetPreset();
+
+        // Reset change tracking after loading
+        _hasChanges = false;
     }
 
     /// <summary>
@@ -376,6 +373,11 @@ public class SaveGameTab : TabPage
     /// </summary>
     public void ApplySettings()
     {
+        if (!_hasChanges)
+        {
+            return;  // No changes to apply
+        }
+
         var settings = new Dictionary<string, double>();
         
         foreach (var kvp in _settingControls)
@@ -389,7 +391,7 @@ public class SaveGameTab : TabPage
 
         if (_saveGameManager.WriteSettings(settings))
         {
-            // Silent success - no popup needed
+            _hasChanges = false;  // Reset after successful write
         }
         else
         {

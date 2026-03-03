@@ -32,6 +32,7 @@ public class MainForm : Form
         InitializeTooltips();
         
         Shown += MainForm_Shown;
+        FormClosing += MainForm_FormClosing;
     }
 
     private void MainForm_Shown(object? sender, EventArgs e)
@@ -71,6 +72,30 @@ public class MainForm : Form
             ClientSize = new Size(minWidth, totalHeight);
         };
         timer.Start();
+    }
+
+    /// <summary>
+    /// Updates asterisk indicators on tabs with unsaved changes.
+    /// </summary>
+    private void UpdateTabAsterisks()
+    {
+        // Save Editor tab
+        if (_saveEditorTab != null)
+        {
+            _saveEditorTab.Text = _saveEditorTab.HasChanges 
+                ? "User Settings *" 
+                : "User Settings";
+        }
+        
+        // Game Progress tab
+        if (_gameProgressTab != null)
+        {
+            _gameProgressTab.Text = _gameProgressTab.HasChanges 
+                ? "Save/Stats/Progress *" 
+                : "Save/Stats/Progress";
+        }
+        
+        // Inventory tab - no write support yet, no asterisk needed
     }
 
     private async void InitializeTooltips()
@@ -235,16 +260,22 @@ public class MainForm : Form
         }
 
         // Add Save Editor tab
-        _saveEditorTab = new SaveGameTab("User Settings (Settings.sav)");
+        _saveEditorTab = new SaveGameTab("User Settings");
+        _saveEditorTab.Text = "User Settings";
         _tabControl.TabPages.Add(_saveEditorTab);
 
         // Add Game Progress tab
         _gameProgressTab = new GameProgressTab();
+        _gameProgressTab.Text = "Save/Stats/Progress";
         _tabControl.TabPages.Add(_gameProgressTab);
 
         // Add Inventory tab
         _inventoryTab = new InventoryTab();
+        _inventoryTab.Text = "Inventory & Equipment (Beta)";
         _tabControl.TabPages.Add(_inventoryTab);
+
+        // Wire up tab selection to update asterisks
+        _tabControl.Selected += (s, e) => UpdateTabAsterisks();
 
         WireUpScalabilityGroupChangeTracking();
         WireUpAADependentSettings();
@@ -514,13 +545,19 @@ public class MainForm : Form
                 }
             }
 
-            // Apply Save Editor settings
-            _saveEditorTab?.ApplySettings();
+            // Apply Save Editor settings (only if there are changes)
+            if (_saveEditorTab != null && _saveEditorTab.HasChanges)
+            {
+                _saveEditorTab.ApplySettings();
+            }
 
-            // Apply Game Progress settings
-            _gameProgressTab?.ApplySettings();
+            // Apply Game Progress settings (only if there are changes)
+            if (_gameProgressTab != null && _gameProgressTab.HasChanges)
+            {
+                _gameProgressTab.ApplySettings();
+            }
 
-            // Apply Inventory settings
+            // Apply Inventory settings (always call, it handles "no changes" internally)
             _inventoryTab?.ApplyChanges();
 
             if (_configManager.WriteAll())
@@ -533,6 +570,7 @@ public class MainForm : Form
                 _hasScalabilityGroupChanges = false;
                 LoadProfiles();
                 RestoreActiveProfile();
+                UpdateTabAsterisks();  // Update asterisks after apply
             }
             else
             {
@@ -544,6 +582,39 @@ public class MainForm : Form
         {
             _statusLabel.Text = $"Error applying settings: {ex.Message}";
             MessageBox.Show($"Error applying settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// Handles form closing to warn about unsaved changes.
+    /// </summary>
+    private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+    {
+        var unsavedTabs = new List<string>();
+        
+        if (_saveEditorTab != null && _saveEditorTab.HasChanges)
+        {
+            unsavedTabs.Add("User Settings");
+        }
+        
+        if (_gameProgressTab != null && _gameProgressTab.HasChanges)
+        {
+            unsavedTabs.Add("Save/Stats/Progress");
+        }
+        
+        if (unsavedTabs.Count > 0)
+        {
+            var result = MessageBox.Show(
+                $"There are unsaved changes on the following tab(s):\n\n{string.Join("\n", unsavedTabs)}\n\n" +
+                "Do you want to close anyway? (Changes will be lost)",
+                "Unsaved Changes",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            
+            if (result == DialogResult.No)
+            {
+                e.Cancel = true;  // Cancel closing
+            }
         }
     }
 

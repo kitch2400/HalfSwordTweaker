@@ -8,15 +8,15 @@ namespace HalfSwordTweaker.UI;
 /// </summary>
 public class InventoryTab : TabPage
 {
-    private GameProgressManager _gameProgressManager;
-    private DataGridView _inventoryDataGridView;
-    private Button _refreshButton;
-    private Button _applyButton;
-    private Label _statusLabel;
-    private Panel _buttonPanel;
-    private Label _itemCountLabel;
-    private ComboBox _inventoryTypeComboBox;
-    private Panel _topPanel;
+    private GameProgressManager _gameProgressManager = null!;
+    private DataGridView _inventoryDataGridView = null!;
+    private Button _refreshButton = null!;
+    private Button _applyButton = null!;
+    private Label _statusLabel = null!;
+    private Panel _buttonPanel = null!;
+    private Label _itemCountLabel = null!;
+    private ComboBox _inventoryTypeComboBox = null!;
+    private Panel _topPanel = null!;
     private List<InventoryItem> _inventoryItems = new();
     private bool _hasChanges;
     private enum InventoryType { Player, Insured }

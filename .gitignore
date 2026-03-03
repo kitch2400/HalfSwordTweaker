@@ -29,6 +29,10 @@ GvasDiagnostics/
 
 # Sample save files (for testing)
 sample_saves/
+decoded_save.txt
+
+# Weight analysis snapshots (live gameplay data)
+snapshots/
 
 # Development configuration (local overrides)
 dev.config.json

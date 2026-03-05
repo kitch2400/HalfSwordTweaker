@@ -137,9 +137,11 @@ public class GvasParser
             int size = BitConverter.ToInt32(_data, offset);
             Log($"Property size: {size}");
             offset += 4;
-            Log($"Value offset: 0x{offset:X8}");
 
-            // Now offset points to the double value
+            // Skip 1 extra byte (Half Sword custom format - not counted in size field)
+            offset += 1;
+
+            // Now offset points to the 8-byte IEEE 754 double value
             if (offset + 8 > _data.Length)
             {
                 Log("Error: Not enough data to read double value");
@@ -150,7 +152,7 @@ public class GvasParser
             {
                 Log($"Warning: Expected size 8 for DoubleProperty, got {size}");
             }
-
+            
             // Read the 8 bytes at the current offset
             byte[] valueBytes = new byte[8];
             Array.Copy(_data, offset, valueBytes, 0, 8);
@@ -213,9 +215,11 @@ public class GvasParser
 
             // Skip type name (typeNameLength already includes null terminator)
             offset += typeNameLength;
+            Log($"After type name, offset: 0x{offset:X8}");
 
             // Skip 4 bytes of unknown data (reserved/padding)
             offset += 4;
+            Log($"After unknown bytes, offset: 0x{offset:X8}");
 
             // Read size (4 bytes, little-endian int32)
             if (offset + 4 > _data.Length)
@@ -226,9 +230,11 @@ public class GvasParser
             int size = BitConverter.ToInt32(_data, offset);
             Log($"Property size: {size}");
             offset += 4;
-            Log($"Value offset: 0x{offset:X8}");
 
-            // Now offset points to the double value
+            // Skip 1 extra byte (Half Sword custom format - not counted in size field)
+            offset += 1;
+
+            // Now offset points to the 8-byte IEEE 754 double value
             if (offset + 8 > _data.Length)
             {
                 Log("Error: Not enough data to read/write double value");
@@ -287,7 +293,7 @@ public class GvasParser
             Log($"Found terminator at offset 0x{terminatorPos:X8}");
 
             // Build the new property structure with length prefix
-            // Format: [4 bytes length prefix] + [4 bytes name len] + [name\0] + [4 bytes type len] + [type\0] + [4 bytes unknown] + [4 bytes size] + [8 bytes value]
+            // Format: [4 bytes length prefix] + [4 bytes name len] + [name\0] + [4 bytes type len] + [type\0] + [4 bytes unknown] + [4 bytes size] + [1 byte padding] + [8 bytes value]
             var nameBytes = Encoding.UTF8.GetBytes(propertyName);
             int nameLen = nameBytes.Length + 1; // Include null terminator
 
@@ -295,8 +301,8 @@ public class GvasParser
             var typeNameBytes = Encoding.UTF8.GetBytes(typeName);
             int typeNameLength = typeNameBytes.Length; // Includes null terminator
 
-            // Calculate new property size (without length prefix)
-            int propertySizeNoPrefix = 4 + nameLen + 4 + typeNameLength + 4 + 4 + 8;
+            // Calculate new property size (without length prefix) - includes 1-byte padding
+            int propertySizeNoPrefix = 4 + nameLen + 4 + typeNameLength + 4 + 4 + 1 + 8;
             // Total with length prefix
             int totalPropertySize = 4 + propertySizeNoPrefix;
 
@@ -336,6 +342,11 @@ public class GvasParser
             BitConverter.GetBytes(8).CopyTo(newProperty, offset);
             Log($"[AddDoubleProperty] Wrote size 8 at offset 0x{offset:X8}");
             offset += 4;
+
+            // Write 1-byte padding (Half Sword custom format)
+            newProperty[offset] = 0;
+            Log($"[AddDoubleProperty] Wrote 1-byte padding at offset 0x{offset:X8}");
+            offset += 1;
 
             // Write value (8 bytes LE, the double)
             byte[] valueBytes = BitConverter.GetBytes(value);

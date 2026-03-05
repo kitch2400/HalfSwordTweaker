@@ -1,5 +1,6 @@
 using HalfSwordTweaker.Config;
 using System.ComponentModel;
+using System.Linq;
 
 namespace HalfSwordTweaker.UI;
 
@@ -103,83 +104,15 @@ public class SaveGameSettingControl : Panel
 }
 
 /// <summary>
-/// Represents a blood/gore preset selector control.
-/// </summary>
-public class BloodGorePresetControl : Panel
-{
-    private readonly ComboBox _comboBox;
-    private readonly Label _presetLabel;
-
-    public event EventHandler? SelectedPresetChanged;
-
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string SelectedPreset
-    {
-        get => _comboBox.SelectedItem?.ToString() ?? "Gentle";
-        set => _comboBox.SelectedItem = value;
-    }
-
-    public BloodGorePresetControl()
-    {
-        Padding = new Padding(3);
-        Margin = new Padding(2);
-        Width = 520;
-        Height = 65;
-        Anchor = AnchorStyles.Left | AnchorStyles.Top;
-
-        _presetLabel = new Label
-        {
-            Text = "Blood/Gore Preset",
-            AutoSize = true,
-            Location = new Point(3, 3),
-            Font = new Font(FontFamily.GenericSansSerif, 9F, FontStyle.Bold)
-        };
-
-        _comboBox = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            AutoSize = true,
-            Location = new Point(3, 25),
-            Width = 514
-        };
-
-        _comboBox.Items.AddRange(new[] { "Gentle", "Gruesome", "Grotesque", "Custom" });
-        _comboBox.SelectedItem = "Gentle";
-
-        _comboBox.SelectedIndexChanged += (s, e) => SelectedPresetChanged?.Invoke(this, EventArgs.Empty);
-
-        Controls.Add(_comboBox);
-        Controls.Add(_presetLabel);
-    }
-
-    public void ApplyPreset(decimal bloodValue, decimal goreValue)
-    {
-        _comboBox.SelectedItem = "Custom";
-        SelectedPresetChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    public ComboBox GetComboBox() => _comboBox;
-}
-
-/// <summary>
 /// Represents a tab for editing save game settings.
 /// </summary>
 public class SaveGameTab : TabPage
 {
     private readonly SaveGameManager _saveGameManager;
     private readonly Dictionary<string, SaveGameSettingControl> _settingControls = new();
-    private readonly BloodGorePresetControl? _presetControl;
     private readonly FlowLayoutPanel _flowLayoutPanel = new();
     private bool _hasChanges = false;
     private readonly string _baseTabText;
-
-    // Blood/Gore presets with their values
-    private static readonly Dictionary<string, (decimal Blood, decimal Gore)> Presets = new()
-    {
-        { "Gentle", (0.00m, 0.00m) },
-        { "Gruesome", (0.75m, 0.75m) },
-        { "Grotesque", (1.50m, 2.00m) }
-    };
 
     /// <summary>
     /// Gets the category name for this tab.
@@ -189,7 +122,7 @@ public class SaveGameTab : TabPage
     /// <summary>
     /// Gets a value indicating whether there are unsaved changes.
     /// </summary>
-    public bool HasChanges => _hasChanges;
+    public bool HasChanges => _hasChanges || _settingControls.Values.Any(c => c.IsNotSet);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SaveGameTab"/> class.
@@ -200,7 +133,6 @@ public class SaveGameTab : TabPage
         CategoryName = categoryName;
         _baseTabText = categoryName;
         _saveGameManager = new SaveGameManager();
-        _presetControl = new BloodGorePresetControl();
         
         InitializeComponent();
         LoadSettings();
@@ -218,47 +150,13 @@ public class SaveGameTab : TabPage
         _flowLayoutPanel.Dock = DockStyle.Fill;
         _flowLayoutPanel.Padding = new Padding(10);
 
-        // Setup preset control
-        _presetControl!.SelectedPresetChanged += PresetControl_SelectedPresetChanged;
-
         // Add controls to tab
         Controls.Add(_flowLayoutPanel);
 
-        // Add settings to the panel
-        bool mouseSensitivityAdded = false;
+        // Add all settings to the panel
         foreach (var setting in SaveGameSettingsRegistry.Settings)
         {
             AddSetting(setting);
-            
-            // Insert preset dropdown after Mouse Sensitivity
-            if (!mouseSensitivityAdded && setting.Name == "Mouse Sensitivity")
-            {
-                mouseSensitivityAdded = true;
-                _flowLayoutPanel.Controls.Add(_presetControl);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Handles preset selection changes.
-    /// </summary>
-    private void PresetControl_SelectedPresetChanged(object? sender, EventArgs e)
-    {
-        if (_presetControl == null) return;
-        
-        var selectedPreset = _presetControl.SelectedPreset;
-        
-        // Only apply if it's a predefined preset (not Custom)
-        if (Presets.TryGetValue(selectedPreset, out var values))
-        {
-            var bloodControl = GetSettingControl("Blood Rate");
-            var goreControl = GetSettingControl("Gore Rate");
-            
-            if (bloodControl != null)
-                bloodControl.Value = values.Blood.ToString();
-                
-            if (goreControl != null)
-                goreControl.Value = values.Gore.ToString();
         }
     }
 
@@ -305,67 +203,28 @@ public class SaveGameTab : TabPage
         {
             if (_settingControls.TryGetValue(kvp.Key, out var control))
             {
-                control.Value = kvp.Value.ToString();
-                control.IsNotSet = false;
+                // Check if value is NaN (property missing from file)
+                if (double.IsNaN(kvp.Value))
+                {
+                    // Property missing - use midpoint value and mark as "Not Set"
+                    var settingDef = SaveGameSettingsRegistry.Settings
+                        .First(s => s.Name == kvp.Key);
+                    double midValue = (settingDef.MinValue + settingDef.MaxValue) / 2.0;
+                    
+                    control.Value = midValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    control.IsNotSet = true;
+                    Console.WriteLine($"[SaveGameTab] '{kvp.Key}' not found in file, using midpoint {midValue}");
+                }
+                else
+                {
+                    control.Value = kvp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    control.IsNotSet = false;
+                }
             }
         }
-
-        // Detect and set the appropriate preset
-        DetectAndSetPreset();
 
         // Reset change tracking after loading
         _hasChanges = false;
-    }
-
-    /// <summary>
-    /// Detects the current blood/gore values and sets the matching preset.
-    /// </summary>
-    private void DetectAndSetPreset()
-    {
-        if (_presetControl == null) return;
-        
-        var bloodControl = GetSettingControl("Blood Rate");
-        var goreControl = GetSettingControl("Gore Rate");
-        
-        if (bloodControl == null || goreControl == null)
-            return;
-
-        // Parse current values (use InvariantCulture to handle dot decimal separator)
-        if (!decimal.TryParse(bloodControl.Value, 
-            System.Globalization.NumberStyles.Any, 
-            System.Globalization.CultureInfo.InvariantCulture, 
-            out var bloodValue) ||
-            !decimal.TryParse(goreControl.Value, 
-            System.Globalization.NumberStyles.Any, 
-            System.Globalization.CultureInfo.InvariantCulture, 
-            out var goreValue))
-        {
-            // Default to Gentle if we can't parse values
-            _presetControl.GetComboBox().SelectedItem = "Gentle";
-            return;
-        }
-
-        // Round to 2 decimal places to handle floating-point precision issues
-        bloodValue = Math.Round(bloodValue, 2);
-        goreValue = Math.Round(goreValue, 2);
-
-        // Try to match against known presets
-        string? matchedPreset = null;
-
-        foreach (var preset in Presets)
-        {
-            var presetBlood = Math.Round(preset.Value.Blood, 2);
-            var presetGore = Math.Round(preset.Value.Gore, 2);
-            
-            if (bloodValue == presetBlood && goreValue == presetGore)
-            {
-                matchedPreset = preset.Key;
-                break;
-            }
-        }
-
-        // Set to Custom if no preset matches, otherwise set to matched preset
-        _presetControl.GetComboBox().SelectedItem = matchedPreset ?? "Custom";
     }
 
     /// <summary>
@@ -373,9 +232,12 @@ public class SaveGameTab : TabPage
     /// </summary>
     public void ApplySettings()
     {
-        if (!_hasChanges)
+        // Check if any properties are missing (Not set) - need to auto-create them
+        bool hasMissing = _settingControls.Values.Any(c => c.IsNotSet);
+        
+        if (!_hasChanges && !hasMissing)
         {
-            return;  // No changes to apply
+            return;  // No changes and no missing properties
         }
 
         var settings = new Dictionary<string, double>();
@@ -392,6 +254,9 @@ public class SaveGameTab : TabPage
         if (_saveGameManager.WriteSettings(settings))
         {
             _hasChanges = false;  // Reset after successful write
+            
+            // Reload to verify and clear "Not set" labels
+            LoadSettings();
         }
         else
         {
@@ -419,5 +284,4 @@ public class SaveGameTab : TabPage
     {
         MessageBox.Show(this, message, title, MessageBoxButtons.OK, icon);
     }
-
 }

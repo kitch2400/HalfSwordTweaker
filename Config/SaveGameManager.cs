@@ -63,11 +63,11 @@ public class SaveGameManager
         if (!SettingsSaveExists())
         {
             Console.Error.WriteLine($"[SaveGameManager] Settings.sav does not exist!");
-            // Return default values if file doesn't exist
+            // Return NaN for all settings to trigger "Not set" state and auto-creation
             var defaults = new Dictionary<string, double>();
             foreach (var setting in SaveGameSettingsRegistry.Settings)
             {
-                defaults[setting.Name] = setting.DefaultValue;
+                defaults[setting.Name] = double.NaN;
             }
             return defaults;
         }
@@ -108,7 +108,7 @@ public class SaveGameManager
             // Create backup first
             CreateBackup();
 
-            // Read existing file data
+            // Read existing file data or create from template
             byte[] data;
             if (SettingsSaveExists())
             {
@@ -117,10 +117,21 @@ public class SaveGameManager
             }
             else
             {
-                Console.Error.WriteLine($"[SaveGameManager] Settings.sav does not exist, cannot write!");
-                // If file doesn't exist, we can't write settings
-                // A full implementation would create a new GVAS file
-                return false;
+                // File doesn't exist - create from embedded template
+                Console.Error.WriteLine($"[SaveGameManager] Settings.sav does not exist, creating from template");
+                try
+                {
+                    data = (byte[])SettingsTemplate.Data.Clone();
+                    Console.Error.WriteLine($"[SaveGameManager] Created new Settings.sav from template ({data.Length} bytes)");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[SaveGameManager] ERROR: Failed to access template data: {ex.Message}");
+                    Console.Error.WriteLine($"[SaveGameManager] Stack trace: {ex.StackTrace}");
+                    Console.Error.WriteLine($"[SaveGameManager] Template class: {typeof(SettingsTemplate).FullName}");
+                    Console.Error.WriteLine($"[SaveGameManager] Template data length: {SettingsTemplate.Data?.Length ?? 0}");
+                    return false;
+                }
             }
 
             // Parse and update the data
@@ -131,11 +142,33 @@ public class SaveGameManager
             foreach (var setting in settings)
             {
                 Console.Error.WriteLine($"[SaveGameManager] Updating '{setting.Key}' to {setting.Value}");
+                
+                // Try to update existing property first
                 if (!parser.UpdateDoubleProperty(setting.Key, setting.Value))
                 {
-                    Console.Error.WriteLine($"[SaveGameManager] FAILED to update '{setting.Key}' - property not found or write failed");
-                    success = false;
-                    // Continue trying to update other settings
+                    // Property not found - check if we should auto-create
+                    var settingDef = SaveGameSettingsRegistry.Settings
+                        .FirstOrDefault(s => s.Name == setting.Key);
+                    
+                    if (settingDef != null && settingDef.AutoCreate)
+                    {
+                        Console.Error.WriteLine($"[SaveGameManager] Property '{setting.Key}' not found, auto-creating with value {setting.Value}");
+                        
+                        if (parser.AddDoubleProperty(setting.Key, setting.Value))
+                        {
+                            Console.Error.WriteLine($"[SaveGameManager] Successfully added '{setting.Key}'");
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[SaveGameManager] FAILED to add '{setting.Key}'");
+                            success = false;
+                        }
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"[SaveGameManager] Property '{setting.Key}' not found and auto-create disabled");
+                        success = false;
+                    }
                 }
                 else
                 {
@@ -166,10 +199,30 @@ public class SaveGameManager
             var verifyParser = new GvasParser(verifyBytes);
             var parsedSettings = verifyParser.ParseSettings();
             
+            Console.Error.WriteLine($"[SaveGameManager] Verification parse results:");
+            foreach (var kvp in parsedSettings)
+            {
+                if (double.IsNaN(kvp.Value))
+                {
+                    Console.Error.WriteLine($"[SaveGameManager]   '{kvp.Key}': NOT FOUND (NaN)");
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[SaveGameManager]   '{kvp.Key}': {kvp.Value}");
+                }
+            }
+            
             foreach (var setting in settings)
             {
                 if (parsedSettings.TryGetValue(setting.Key, out var readValue))
                 {
+                    if (double.IsNaN(readValue))
+                    {
+                        Console.Error.WriteLine($"[SaveGameManager] VERIFICATION FAILED: Property '{setting.Key}' not found in file after write!");
+                        Console.Error.WriteLine($"[SaveGameManager] This means AddDoubleProperty() may have failed or the file structure is incorrect");
+                        return false;
+                    }
+                    
                     Console.Error.WriteLine($"[SaveGameManager] Verified '{setting.Key}': expected {setting.Value}, read {readValue}");
                     if (Math.Abs(readValue - setting.Value) > 0.0001)
                     {
@@ -181,7 +234,7 @@ public class SaveGameManager
                 }
                 else
                 {
-                    Console.Error.WriteLine($"[SaveGameManager] Property '{setting.Key}' not found in verification read!");
+                    Console.Error.WriteLine($"[SaveGameManager] VERIFICATION FAILED: Property '{setting.Key}' not in parsed settings dictionary!");
                     return false;
                 }
             }

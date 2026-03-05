@@ -241,8 +241,7 @@ public class InventoryTab : TabPage
     {
         if (!_hasChanges)
         {
-            MessageBox.Show("No changes to apply.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return true;
+            return true;  // Silently return, no popup
         }
 
         try

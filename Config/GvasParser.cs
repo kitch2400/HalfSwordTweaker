@@ -83,7 +83,8 @@ public class GvasParser
     /// <summary>
     /// Finds and reads a DoubleProperty value by name.
     /// Searches the file for the property name, then parses with correct format:
-    /// [4 bytes length prefix] + [4 bytes name len] + [name] + [4 bytes type len] + [type] + [4 bytes unknown] + [4 bytes size] + [8 bytes value]
+    /// [4 bytes name len] + [name] + [4 bytes type len] + [type] + [4 bytes unknown] + [4 bytes size] + [1 byte padding] + [8 bytes value]
+    /// With proper length prefix chain: [4-byte padding] + [4-byte NEXT property name length] + [Property]...
     /// </summary>
     /// <param name="propertyName">The name of the property to find.</param>
     /// <returns>The property value, or null if not found.</returns>
@@ -174,6 +175,7 @@ public class GvasParser
     /// <summary>
     /// Updates a DoubleProperty value in the GVAS data.
     /// Finds the property by name search and updates its 8-byte value.
+    /// Structure: [Property Name\0] + [Type Name Length] + [Type Name\0] + [Unknown 4 bytes] + [Size 4 bytes] + [Padding 1 byte] + [Value 8 bytes]
     /// </summary>
     /// <param name="propertyName">The name of the property to update.</param>
     /// <param name="value">The new value.</param>
@@ -262,8 +264,9 @@ public class GvasParser
 
     /// <summary>
     /// Adds a new DoubleProperty to the GVAS data by appending it before the terminator.
-    /// Format includes length prefix before property name length.
-    /// Structure: [4 bytes length prefix] + [4 bytes name len] + [name] + [4 bytes type len] + [type] + [4 bytes unknown] + [4 bytes size] + [8 bytes value]
+    /// Correctly integrates the new property into the existing length prefix chain.
+    /// Structure: [Property Name\0] + [Type Name Length] + [Type Name\0] + [Unknown 4 bytes] + [Size 4 bytes] + [Padding 1 byte] + [Value 8 bytes]
+    /// When adding at end: [...Previous Property Value][4-byte padding][4-byte NEW property name length][4-byte padding][NEW Property][4-byte "None" length][Terminator]
     /// </summary>
     /// <param name="propertyName">The name of the property to add.</param>
     /// <param name="value">The initial value.</param>
@@ -282,7 +285,7 @@ public class GvasParser
 
             Log($"Property '{propertyName}' not found, will add with value {value}");
 
-            // Find the terminator position (0x05 0x00 0x00 0x00 followed by "None")
+            // Find the terminator position ("None\0")
             int terminatorPos = FindTerminatorPosition();
             if (terminatorPos < 0)
             {
@@ -292,8 +295,8 @@ public class GvasParser
 
             Log($"Found terminator at offset 0x{terminatorPos:X8}");
 
-            // Build the new property structure with length prefix
-            // Format: [4 bytes length prefix] + [4 bytes name len] + [name\0] + [4 bytes type len] + [type\0] + [4 bytes unknown] + [4 bytes size] + [1 byte padding] + [8 bytes value]
+            // Build the new property structure (without initial length prefix)
+            // Format: [4 bytes name len] + [name\0] + [4 bytes type len] + [type\0] + [4 bytes unknown] + [4 bytes size] + [1 byte padding] + [8 bytes value]
             var nameBytes = Encoding.UTF8.GetBytes(propertyName);
             int nameLen = nameBytes.Length + 1; // Include null terminator
 
@@ -301,20 +304,18 @@ public class GvasParser
             var typeNameBytes = Encoding.UTF8.GetBytes(typeName);
             int typeNameLength = typeNameBytes.Length; // Includes null terminator
 
-            // Calculate new property size (without length prefix) - includes 1-byte padding
-            int propertySizeNoPrefix = 4 + nameLen + 4 + typeNameLength + 4 + 4 + 1 + 8;
-            // Total with length prefix
-            int totalPropertySize = 4 + propertySizeNoPrefix;
+            // Calculate property size - DOES NOT include initial length prefix
+            int propertySize = 4 + nameLen + 4 + typeNameLength + 4 + 4 + 1 + 8;
 
-            Log($"Building new property: name={propertyName} ({nameLen} bytes), type={typeName} ({typeNameLength} bytes), total={totalPropertySize} bytes");
+            Log($"Building new property: name={propertyName} ({nameLen} bytes), type={typeName} ({typeNameLength} bytes), total={propertySize} bytes");
 
-            // Create buffer for new property with length prefix
-            byte[] newProperty = new byte[totalPropertySize];
+            // Create buffer for new property (without initial length prefix)
+            byte[] newProperty = new byte[propertySize];
             int offset = 0;
 
-            // Write length prefix (4 bytes LE) - this is the name length of THIS property
+            // Write property name length (4 bytes LE)
             BitConverter.GetBytes(nameLen).CopyTo(newProperty, offset);
-            Log($"[AddDoubleProperty] Wrote length prefix {nameLen} at offset 0x{offset:X8}");
+            Log($"[AddDoubleProperty] Wrote property name length {nameLen} at offset 0x{offset:X8}");
             offset += 4;
 
             // Write property name + null
@@ -357,22 +358,83 @@ public class GvasParser
             // Log the complete property structure in hex
             Log($"[AddDoubleProperty] Complete property hex: {BitConverter.ToString(newProperty).Replace("-", " ")}");
 
-            // Insert new property before terminator
-            // New structure: [data before terminator] + [new property] + [terminator]
-            byte[] dataBeforeTerminator = new byte[terminatorPos];
-            Array.Copy(_data, 0, dataBeforeTerminator, 0, terminatorPos);
-
-            byte[] terminatorData = new byte[_data.Length - terminatorPos];
-            Array.Copy(_data, terminatorPos, terminatorData, 0, terminatorData.Length);
-
-            _data = new byte[dataBeforeTerminator.Length + totalPropertySize + terminatorData.Length];
-            Array.Copy(dataBeforeTerminator, 0, _data, 0, dataBeforeTerminator.Length);
-            Array.Copy(newProperty, 0, _data, dataBeforeTerminator.Length, totalPropertySize);
-            Array.Copy(terminatorData, 0, _data, dataBeforeTerminator.Length + totalPropertySize, terminatorData.Length);
-
-            Log($"[AddDoubleProperty] Inserted property at offset 0x{terminatorPos:X8}, total size: {dataBeforeTerminator.Length + totalPropertySize + terminatorData.Length} bytes");
-
-            Log($"[AddDoubleProperty] Successfully added '{propertyName}' with value {value}");
+            // Now we need to properly integrate this into the existing structure
+            // The structure should be:
+            // [...Previous Property Value][4-byte padding][4-byte THIS property name length][4-byte padding][THIS property][4-byte "None" length][Terminator]
+            
+            // Find the position of the length prefix that currently points to the terminator
+            // This is 4 bytes before the terminator position
+            int terminatorLengthPrefixPos = terminatorPos - 4;
+            
+            // Validate position
+            if (terminatorLengthPrefixPos < 4 || terminatorLengthPrefixPos >= _data.Length)
+            {
+                Log("[AddDoubleProperty] Error: Invalid terminator length prefix position");
+                return false;
+            }
+            
+            // Read the current length prefix value (should be 5 for "None")
+            int currentLengthPrefix = BitConverter.ToInt32(_data, terminatorLengthPrefixPos);
+            Log($"[AddDoubleProperty] Current terminator length prefix: {currentLengthPrefix}");
+            
+            // Validate that it's 5 (length of "None")
+            if (currentLengthPrefix != 5)
+            {
+                Log($"[AddDoubleProperty] Warning: Expected terminator length prefix to be 5, but found {currentLengthPrefix}");
+                // Continue anyway, but this might indicate file corruption
+            }
+            
+            // Build the new file structure:
+            // Part 1: Data before the terminator length prefix
+            byte[] dataBeforeLengthPrefix = new byte[terminatorLengthPrefixPos];
+            Array.Copy(_data, 0, dataBeforeLengthPrefix, 0, terminatorLengthPrefixPos);
+            
+            // Part 2: New length prefix (pointing to our new property)
+            byte[] newPropertyLengthPrefix = BitConverter.GetBytes(nameLen);
+            Log($"[AddDoubleProperty] New length prefix will point to our property: {nameLen}");
+            
+            // Part 3: 4-byte padding
+            byte[] padding = new byte[4] { 0, 0, 0, 0 };
+            
+            // Part 4: Our new property (already built)
+            
+            // Part 5: Length prefix pointing to terminator (5 for "None")
+            byte[] terminatorLengthPrefix = BitConverter.GetBytes(5);
+            
+            // Part 6: Terminator data
+            int terminatorSize = _data.Length - terminatorPos;
+            byte[] terminatorData = new byte[terminatorSize];
+            Array.Copy(_data, terminatorPos, terminatorData, 0, terminatorSize);
+            
+            // Build the final data structure
+            _data = new byte[dataBeforeLengthPrefix.Length + newPropertyLengthPrefix.Length + padding.Length + newProperty.Length + terminatorLengthPrefix.Length + terminatorData.Length];
+            int writeOffset = 0;
+            
+            // Copy data before length prefix
+            Array.Copy(dataBeforeLengthPrefix, 0, _data, writeOffset, dataBeforeLengthPrefix.Length);
+            writeOffset += dataBeforeLengthPrefix.Length;
+            
+            // Write new length prefix (points to our new property)
+            Array.Copy(newPropertyLengthPrefix, 0, _data, writeOffset, newPropertyLengthPrefix.Length);
+            writeOffset += newPropertyLengthPrefix.Length;
+            
+            // Write padding
+            Array.Copy(padding, 0, _data, writeOffset, padding.Length);
+            writeOffset += padding.Length;
+            
+            // Write our new property
+            Array.Copy(newProperty, 0, _data, writeOffset, newProperty.Length);
+            writeOffset += newProperty.Length;
+            
+            // Write length prefix that points to terminator
+            Array.Copy(terminatorLengthPrefix, 0, _data, writeOffset, terminatorLengthPrefix.Length);
+            writeOffset += terminatorLengthPrefix.Length;
+            
+            // Write terminator
+            Array.Copy(terminatorData, 0, _data, writeOffset, terminatorData.Length);
+            
+            Log($"[AddDoubleProperty] Successfully integrated '{propertyName}' with value {value}");
+            Log($"[AddDoubleProperty] Final data size: {_data.Length} bytes (was {_data.Length - (newProperty.Length + newPropertyLengthPrefix.Length + padding.Length + terminatorLengthPrefix.Length)})");
             return true;
         }
         catch (Exception ex)
